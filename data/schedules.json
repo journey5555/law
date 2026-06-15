@@ -1,0 +1,483 @@
+{
+  "laws": [
+    {
+      "id": "1",
+      "name": "근로기준법",
+      "interval": "weekly",
+      "status": "success",
+      "last_run": "2026-06-15 09:00:05",
+      "next_run": "2026-06-22 09:00:00",
+      "last_enforcement_date": "20251023",
+      "last_prec_count": 340,
+      "knowledge_doc_ids": {
+        "근로기준법": "0b3132f3-ee0e-475a-be90-5ac5c9fca426",
+        "근로기준법 시행령": "2a325589-0e4d-4d34-b29b-d94a23142153",
+        "근로기준법 시행규칙": "6db959df-b1f6-4770-97da-ca42a7783e86"
+      },
+      "last_knowledge_upload": "2026-06-10 18:37:32"
+    },
+    {
+      "id": "2",
+      "name": "남녀고용평등법",
+      "interval": "weekly",
+      "status": "success",
+      "last_run": "2026-06-15 09:00:06",
+      "next_run": "2026-06-22 09:00:00",
+      "last_enforcement_date": "20251001",
+      "last_prec_count": 1,
+      "knowledge_doc_ids": {
+        "남녀고용평등과 일ㆍ가정 양립 지원에 관한 법률": "3b5e54bc-009b-4512-b2f3-b52a2cc180cc",
+        "남녀고용평등과 일ㆍ가정 양립 지원에 관한 법률 시행령": "10bd3a0d-0e13-48e9-9b9e-2ca1b9774991",
+        "남녀고용평등과 일ㆍ가정 양립 지원에 관한 법률 시행규칙": "69d23cfe-23ed-490a-ad91-67c0eaf9d92f"
+      },
+      "last_knowledge_upload": "2026-06-11 09:49:23",
+      "uploaded_prec_ids": [
+        "82448"
+      ],
+      "last_prec_knowledge_upload": "2026-06-11 09:49:25"
+    },
+    {
+      "id": "3",
+      "name": "산업안전보건법",
+      "interval": "monthly",
+      "status": "success",
+      "last_run": "2026-06-10 14:12:10",
+      "next_run": "2026-07-01 09:00:00",
+      "last_enforcement_date": "20260601",
+      "last_prec_count": 71
+    },
+    {
+      "id": "044f5479",
+      "name": "외국인근로자의 고용 등에 관한 법률",
+      "interval": "weekly",
+      "day": "수",
+      "time": "14:10",
+      "status": "success",
+      "last_run": "2026-06-10 14:10:05",
+      "next_run": "2026-06-17 14:10:00",
+      "last_enforcement_date": "20251001",
+      "last_prec_count": 0
+    },
+    {
+      "id": "ef4bc0ef",
+      "name": "건강가정기본법",
+      "interval": "weekly",
+      "day": "수",
+      "time": "15:50",
+      "collect_type": "판례",
+      "status": "success",
+      "last_run": "2026-06-15 10:21:03",
+      "next_run": "2026-06-17 15:50:00",
+      "last_enforcement_date": null,
+      "last_prec_count": 0
+    },
+    {
+      "id": "d2676aa7",
+      "name": "근로자퇴직급여 보장법",
+      "interval": "weekly",
+      "day": "수",
+      "time": "17:50",
+      "collect_type": "전체",
+      "status": "success",
+      "last_run": "2026-06-10 17:50:17",
+      "next_run": "2026-06-17 17:50:00",
+      "last_enforcement_date": "20251111",
+      "last_prec_count": 44
+    },
+    {
+      "id": "8627d759",
+      "name": "최저임금법",
+      "interval": "weekly",
+      "day": "수",
+      "time": "17:50",
+      "collect_type": "전체",
+      "status": "success",
+      "last_run": "2026-06-10 17:50:09",
+      "next_run": "2026-06-17 17:50:00",
+      "last_enforcement_date": "20200526",
+      "last_prec_count": 9
+    },
+    {
+      "id": "eb83e5a3",
+      "name": "근로복지기본법",
+      "interval": "weekly",
+      "day": "목",
+      "time": "17:00",
+      "collect_type": "전체",
+      "status": "success",
+      "last_run": "2026-06-15 10:21:33",
+      "next_run": "2026-06-18 17:00:00",
+      "last_enforcement_date": "20230611",
+      "last_prec_count": 0,
+      "knowledge_doc_ids": {
+        "근로복지기본법": "0d0fed6b-823e-40d0-9348-e058578cd892",
+        "근로복지기본법 시행령": "967b2a15-693a-4da1-9114-a417ca556a25",
+        "근로복지기본법 시행규칙": "f0f9adde-3a54-4dd6-b55a-ae0296dc782a"
+      },
+      "last_knowledge_upload": "2026-06-11 17:05:47"
+    },
+    {
+      "id": "6f392520",
+      "name": "공공기관의 소방안전관리에 관한 규정",
+      "interval": "weekly",
+      "day": "월",
+      "time": "09:00",
+      "collect_type": "법령",
+      "status": "success",
+      "last_run": "2026-06-15 10:23:47",
+      "next_run": "2026-06-22 09:00:00",
+      "last_enforcement_date": "20221201",
+      "last_prec_count": 0,
+      "knowledge_doc_ids": {
+        "공공기관의 소방안전관리에 관한 규정.md": "678f90ea-5a80-43ff-b42e-fc1297e0fd32"
+      },
+      "last_knowledge_upload": "2026-06-15 10:22:27"
+    },
+    {
+      "id": "8f026ef5",
+      "name": "국민 평생 직업능력 개발법",
+      "interval": "weekly",
+      "day": "월",
+      "time": "09:00",
+      "collect_type": "전체",
+      "status": "success",
+      "last_run": "2026-06-15 10:24:38",
+      "next_run": "2026-06-22 09:00:00",
+      "last_enforcement_date": "20230704",
+      "last_prec_count": 0,
+      "knowledge_doc_ids": {
+        "국민 평생 직업능력 개발법_1-34조.md": "bc24ea55-ac60-4830-86bc-dbf785d5ce21",
+        "국민 평생 직업능력 개발법_35-63조.md": "f242e96e-8091-4d65-b7f2-d455353ea585",
+        "국민 평생 직업능력 개발법 시행령_1-36조.md": "2ab3caef-0794-4a96-ba6d-860b76493f1c",
+        "국민 평생 직업능력 개발법 시행령_37-53조.md": "c08cfcce-d7c3-49f5-96ca-a8416bc6c087",
+        "국민 평생 직업능력 개발법 시행규칙.md": "eeb76d20-ae11-4cd5-9305-7c7676c361de"
+      },
+      "last_knowledge_upload": "2026-06-15 10:24:38"
+    },
+    {
+      "id": "c3e72009",
+      "name": "가사근로자의 고용개선 등에 관한 법률",
+      "interval": "weekly",
+      "day": "월",
+      "time": "09:00",
+      "collect_type": "전체",
+      "status": "idle",
+      "last_run": null,
+      "next_run": "2026-06-22 09:00:00",
+      "last_enforcement_date": null,
+      "last_prec_count": null
+    }
+  ],
+  "logs": [
+    {
+      "id": "cc9eeb76",
+      "law_id": "8f026ef5",
+      "law_name": "국민 평생 직업능력 개발법",
+      "started_at": "2026-06-15 10:24:32",
+      "finished_at": "2026-06-15 10:24:38",
+      "status": "success",
+      "count": 3,
+      "message": "법령 Knowledge 3건 업로드"
+    },
+    {
+      "id": "74bfa97d",
+      "law_id": "8f026ef5",
+      "law_name": "국민 평생 직업능력 개발법",
+      "started_at": "2026-06-15 10:24:14",
+      "finished_at": "2026-06-15 10:24:24",
+      "status": "success",
+      "count": 3,
+      "message": "법령 업로드 실패: 국민 평생 직업능력 개발법, 국민 평생 직업능력 개발법 시행령, 국민 평생 직업능력 개발법 시행규칙"
+    },
+    {
+      "id": "d03c7cca",
+      "law_id": "8f026ef5",
+      "law_name": "국민 평생 직업능력 개발법",
+      "started_at": "2026-06-15 10:24:01",
+      "finished_at": "2026-06-15 10:24:05",
+      "status": "success",
+      "count": 3,
+      "message": "법령 업로드 실패: 국민 평생 직업능력 개발법, 국민 평생 직업능력 개발법 시행령, 국민 평생 직업능력 개발법 시행규칙"
+    },
+    {
+      "id": "46baf64d",
+      "law_id": "6f392520",
+      "law_name": "공공기관의 소방안전관리에 관한 규정",
+      "started_at": "2026-06-15 10:23:47",
+      "finished_at": "2026-06-15 10:23:47",
+      "status": "success",
+      "count": 1,
+      "message": "법령 1건 확인"
+    },
+    {
+      "id": "49e806d1",
+      "law_id": "6f392520",
+      "law_name": "공공기관의 소방안전관리에 관한 규정",
+      "started_at": "2026-06-15 10:22:25",
+      "finished_at": "2026-06-15 10:22:27",
+      "status": "success",
+      "count": 1,
+      "message": "법령 Knowledge 1건 업로드"
+    },
+    {
+      "id": "581482d1",
+      "law_id": "6f392520",
+      "law_name": "공공기관의 소방안전관리에 관한 규정",
+      "started_at": "2026-06-15 10:21:59",
+      "finished_at": "2026-06-15 10:22:00",
+      "status": "success",
+      "count": 1,
+      "message": "법령 업로드 실패: 공공기관의 소방안전관리에 관한 규정"
+    },
+    {
+      "id": "8f5aa59d",
+      "law_id": "eb83e5a3",
+      "law_name": "근로복지기본법",
+      "started_at": "2026-06-15 10:21:33",
+      "finished_at": "2026-06-15 10:21:33",
+      "status": "success",
+      "count": 3,
+      "message": "법령 3건, 판례 0건 확인"
+    },
+    {
+      "id": "2cb7e75b",
+      "law_id": "ef4bc0ef",
+      "law_name": "건강가정기본법",
+      "started_at": "2026-06-15 10:21:03",
+      "finished_at": "2026-06-15 10:21:03",
+      "status": "success",
+      "count": 0,
+      "message": "판례 0건 확인"
+    },
+    {
+      "id": "bd194349",
+      "law_id": "2",
+      "law_name": "남녀고용평등법",
+      "started_at": "2026-06-15 09:00:05",
+      "finished_at": "2026-06-15 09:00:06",
+      "status": "success",
+      "count": 4,
+      "message": "법령 3건, 판례 1건 확인"
+    },
+    {
+      "id": "fff53bb7",
+      "law_id": "1",
+      "law_name": "근로기준법",
+      "started_at": "2026-06-15 09:00:02",
+      "finished_at": "2026-06-15 09:00:05",
+      "status": "success",
+      "count": 343,
+      "message": "판례+1건, 판례 업로드 실패 5건"
+    },
+    {
+      "id": "29c69833",
+      "law_id": "eb83e5a3",
+      "law_name": "근로복지기본법",
+      "started_at": "2026-06-11 17:05:42",
+      "finished_at": "2026-06-11 17:05:47",
+      "status": "success",
+      "count": 3,
+      "message": "법령 Knowledge 3건 업로드"
+    },
+    {
+      "id": "fe7c48fe",
+      "law_id": "eb83e5a3",
+      "law_name": "근로복지기본법",
+      "started_at": "2026-06-11 17:03:32",
+      "finished_at": "2026-06-11 17:03:37",
+      "status": "success",
+      "count": 3,
+      "message": "법령 업로드 실패: 근로복지기본법, 근로복지기본법 시행령, 근로복지기본법 시행규칙"
+    },
+    {
+      "id": "7ba72fe4",
+      "law_id": "eb83e5a3",
+      "law_name": "근로복지기본법",
+      "started_at": "2026-06-11 17:02:58",
+      "finished_at": "2026-06-11 17:03:02",
+      "status": "success",
+      "count": 3,
+      "message": "법령 업로드 실패: 근로복지기본법, 근로복지기본법 시행령, 근로복지기본법 시행규칙"
+    },
+    {
+      "id": "f740cece",
+      "law_id": "eb83e5a3",
+      "law_name": "근로복지기본법",
+      "started_at": "2026-06-11 17:00:00",
+      "finished_at": "2026-06-11 17:00:05",
+      "status": "success",
+      "count": 3,
+      "message": "법령 업로드 실패: 근로복지기본법, 근로복지기본법 시행령, 근로복지기본법 시행규칙"
+    },
+    {
+      "id": "46dbb01a",
+      "law_id": "2",
+      "law_name": "남녀고용평등법",
+      "started_at": "2026-06-11 09:49:16",
+      "finished_at": "2026-06-11 09:49:25",
+      "status": "success",
+      "count": 4,
+      "message": "법령 Knowledge 3건 업로드, 판례 Knowledge 1건 업로드"
+    },
+    {
+      "id": "98c72c06",
+      "law_id": "1",
+      "law_name": "근로기준법",
+      "started_at": "2026-06-10 18:37:27",
+      "finished_at": "2026-06-10 18:37:36",
+      "status": "success",
+      "count": 342,
+      "message": "법령 Knowledge 3건 업로드"
+    },
+    {
+      "id": "87561609",
+      "law_id": "1",
+      "law_name": "근로기준법",
+      "started_at": "2026-06-10 18:23:16",
+      "finished_at": "2026-06-10 18:23:21",
+      "status": "success",
+      "count": 342,
+      "message": "판례+4건, 판례 Knowledge 4건 업로드"
+    },
+    {
+      "id": "97d423a3",
+      "law_id": "d2676aa7",
+      "law_name": "근로자퇴직급여 보장법",
+      "started_at": "2026-06-10 17:50:09",
+      "finished_at": "2026-06-10 17:50:17",
+      "status": "success",
+      "count": 47,
+      "message": "법령 Knowledge 3건 업로드, 판례 Knowledge 3건 업로드"
+    },
+    {
+      "id": "45746284",
+      "law_id": "8627d759",
+      "law_name": "최저임금법",
+      "started_at": "2026-06-10 17:50:00",
+      "finished_at": "2026-06-10 17:50:09",
+      "status": "success",
+      "count": 12,
+      "message": "법령 Knowledge 3건 업로드, 판례 Knowledge 5건 업로드"
+    },
+    {
+      "id": "ea98a0ed",
+      "law_id": "ef4bc0ef",
+      "law_name": "건강가정기본법",
+      "started_at": "2026-06-10 15:50:00",
+      "finished_at": "2026-06-10 15:50:00",
+      "status": "success",
+      "count": 0,
+      "message": "판례 0건 확인"
+    },
+    {
+      "id": "d02655ed",
+      "law_id": "3de3c9aa",
+      "law_name": "건설근로자의 기능등급확인증 발급 등에 관한 규칙",
+      "started_at": "2026-06-10 15:30:00",
+      "finished_at": "2026-06-10 15:30:00",
+      "status": "success",
+      "count": 0,
+      "message": "법령 0건 확인"
+    },
+    {
+      "id": "b956f7f5",
+      "law_id": "3",
+      "law_name": "산업안전보건법",
+      "started_at": "2026-06-10 14:12:06",
+      "finished_at": "2026-06-10 14:12:10",
+      "status": "success",
+      "count": 3,
+      "message": "판례+3건, 판례 Knowledge 4건 업로드"
+    },
+    {
+      "id": "2dcbe47e",
+      "law_id": "044f5479",
+      "law_name": "외국인근로자의 고용 등에 관한 법률",
+      "started_at": "2026-06-10 14:10:00",
+      "finished_at": "2026-06-10 14:10:05",
+      "status": "success",
+      "count": 3,
+      "message": "법령 Knowledge 3건 업로드"
+    },
+    {
+      "id": "79b23288",
+      "law_id": "3",
+      "law_name": "산업안전보건법",
+      "started_at": "2026-06-10 12:25:17",
+      "finished_at": "2026-06-10 12:25:19",
+      "status": "success",
+      "count": 3,
+      "message": "Knowledge 업로드 완료"
+    },
+    {
+      "id": "bc76440b",
+      "law_id": "1",
+      "law_name": "근로기준법",
+      "started_at": "2026-06-10 12:19:13",
+      "finished_at": "2026-06-10 12:19:16",
+      "status": "success",
+      "count": 3,
+      "message": "Knowledge 업로드 완료"
+    },
+    {
+      "id": "dbbaf362",
+      "law_id": "3",
+      "law_name": "산업안전보건법",
+      "started_at": "2026-06-10 12:16:50",
+      "finished_at": "2026-06-10 12:16:51",
+      "status": "success",
+      "count": 3,
+      "message": "법령 3건 확인"
+    },
+    {
+      "id": "90e2b12e",
+      "law_id": "3",
+      "law_name": "산업안전보건법",
+      "started_at": "2026-06-10 12:15:56",
+      "finished_at": "2026-06-10 12:15:57",
+      "status": "success",
+      "count": 3,
+      "message": "법령 3건 확인"
+    },
+    {
+      "id": "950a1451",
+      "law_id": "3",
+      "law_name": "산업안전보건법",
+      "started_at": "2026-06-10 11:58:47",
+      "finished_at": "2026-06-10 11:58:49",
+      "status": "success",
+      "count": 3,
+      "message": "Knowledge 실패: 파일 업로드 실패 (401): {\"detail\":\"[auth_err:get_token_info] Missing Key\"}"
+    },
+    {
+      "id": "a0f421c7",
+      "law_id": "2",
+      "law_name": "남녀고용평등법",
+      "started_at": "2026-06-09 16:39:26",
+      "finished_at": "2026-06-09 16:39:26",
+      "status": "success",
+      "count": 3,
+      "message": "법령 3건 확인"
+    },
+    {
+      "id": "9e762330",
+      "law_id": "2",
+      "law_name": "남녀고용평등법",
+      "started_at": "2026-06-09 16:26:42",
+      "finished_at": "2026-06-09 16:26:42",
+      "status": "success",
+      "count": 3,
+      "message": "법령 3건 확인"
+    },
+    {
+      "id": "6e6c0b9d",
+      "law_id": "1",
+      "law_name": "근로기준법",
+      "started_at": "2026-06-09 11:40:35",
+      "finished_at": "2026-06-09 11:40:36",
+      "status": "success",
+      "count": 3,
+      "message": "3건 확인"
+    }
+  ]
+}

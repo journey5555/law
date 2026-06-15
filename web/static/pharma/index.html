@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pharma Monitor</title>
+  <link rel="stylesheet" href="/static/pharma/style.css" />
+</head>
+<body>
+
+<header class="app-header">
+  <a href="/" class="back-link">← 법령 서비스</a>
+  <span class="app-logo">💊 Pharma Monitor</span>
+  <ul class="nav-tabs" id="navTabs">
+    <li class="nav-tab active" data-tab="dashboard">대시보드</li>
+    <li class="nav-tab" data-tab="drugs">약품 관리</li>
+    <li class="nav-tab" data-tab="results">수신 이력</li>
+    <li class="nav-tab" data-tab="alerts">알림 <span class="badge-alert" id="alertBadge" style="display:none">0</span></li>
+  </ul>
+  <div class="header-right">
+    <div class="gmail-status">
+      <div class="gmail-dot" id="gmailDot"></div>
+      <span id="gmailStatusText">Gmail 미연결</span>
+    </div>
+    <button class="btn btn-outline btn-sm" id="syncBtn" style="display:none">동기화</button>
+    <button class="btn btn-primary btn-sm" id="gmailConnectBtn">Gmail 연결</button>
+  </div>
+</header>
+
+<!-- ── 대시보드 ─────────────────────────────────── -->
+<div class="page active" id="page-dashboard">
+  <div id="dashboardConnectBanner" class="connect-banner" style="display:none">
+    <p><strong>Gmail 계정을 연결해 주세요</strong>결과 메일을 자동으로 수집하려면 Gmail 계정 연결이 필요합니다.</p>
+    <button class="btn btn-primary btn-sm" onclick="location.href='/pharma/oauth/login'">지금 연결</button>
+  </div>
+  <div class="stat-grid">
+    <div class="stat-card"><div class="stat-num" id="statTotal">-</div><div class="stat-label">전체 약품</div></div>
+    <div class="stat-card"><div class="stat-num received" id="statReceived">-</div><div class="stat-label">결과 수신</div></div>
+    <div class="stat-card"><div class="stat-num overdue" id="statOverdue">-</div><div class="stat-label">미수신 (기한 초과)</div></div>
+    <div class="stat-card"><div class="stat-num pending" id="statPending">-</div><div class="stat-label">대기 중</div></div>
+    <div class="stat-card"><div class="stat-num" id="statResults">-</div><div class="stat-label">수신 이메일</div></div>
+    <div class="stat-card"><div class="stat-num alerts" id="statAlerts">-</div><div class="stat-label">미확인 알림</div></div>
+  </div>
+  <div class="dashboard-grid">
+    <div class="card">
+      <div class="section-title">최근 수신 이력</div>
+      <div id="recentResultsList"><div class="empty-state"><p>수신 이력이 없습니다</p></div></div>
+    </div>
+    <div class="card">
+      <div class="section-title">미확인 알림</div>
+      <div id="dashAlertList"><div class="empty-state"><p>알림이 없습니다</p></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── 약품 관리 ────────────────────────────────── -->
+<div class="page" id="page-drugs">
+  <div class="drugs-toolbar">
+    <button class="btn btn-primary" id="addDrugBtn">+ 약품 추가</button>
+  </div>
+  <div class="drug-list" id="drugList">
+    <div class="empty-state"><p>등록된 약품이 없습니다</p></div>
+  </div>
+</div>
+
+<!-- ── 수신 이력 ────────────────────────────────── -->
+<div class="page" id="page-results">
+  <div class="results-filter">
+    <select id="resultDrugFilter">
+      <option value="">전체 약품</option>
+    </select>
+    <span id="resultCount" style="font-size:12px;color:var(--text-muted)"></span>
+  </div>
+  <div class="result-list" id="resultList">
+    <div class="empty-state"><p>수신 이력이 없습니다</p></div>
+  </div>
+</div>
+
+<!-- ── 알림 ─────────────────────────────────────── -->
+<div class="page" id="page-alerts">
+  <div class="alert-toolbar">
+    <button class="btn btn-ghost btn-sm" id="readAllBtn">전체 읽음 처리</button>
+  </div>
+  <div class="alert-list" id="alertList">
+    <div class="empty-state"><p>알림이 없습니다</p></div>
+  </div>
+</div>
+
+<!-- ── 약품 추가/수정 모달 ──────────────────────── -->
+<div class="modal-backdrop" id="drugModal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="drugModalTitle">약품 추가</span>
+      <button class="modal-close" onclick="closeDrugModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="drugId" />
+      <div class="form-group">
+        <label class="form-label">약품명 *</label>
+        <input type="text" class="form-control" id="drugName" placeholder="예: 오젬픽 (세마글루타이드)" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">설명</label>
+        <textarea class="form-control" id="drugDesc" placeholder="약품에 대한 메모"></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">결과 예상일</label>
+        <input type="date" class="form-control" id="drugExpected" />
+        <p class="form-hint">이 날짜가 지나도 메일이 없으면 미수신 알림이 발생합니다</p>
+      </div>
+      <div class="form-group">
+        <label class="form-label">발신자 필터 (이메일 주소)</label>
+        <input type="text" class="form-control" id="drugSender" placeholder="예: results@cro-lab.com" />
+        <p class="form-hint">이 발신자에게서 온 메일만 수집합니다</p>
+      </div>
+      <div class="form-group">
+        <label class="form-label">제목 키워드</label>
+        <input type="text" class="form-control" id="drugKeyword" placeholder="예: 임상결과 OR 시험성적" />
+        <p class="form-hint">Gmail 검색 연산자 사용 가능 (AND, OR, 따옴표)</p>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeDrugModal()">취소</button>
+      <button class="btn btn-primary" id="saveDrugBtn">저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── 이메일 상세 모달 ─────────────────────────── -->
+<div class="modal-backdrop" id="emailModal">
+  <div class="modal" style="width:640px">
+    <div class="modal-header">
+      <span class="modal-title" id="emailModalTitle">메일 상세</span>
+      <button class="modal-close" onclick="closeEmailModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="detail-meta" id="emailDetailMeta"></div>
+      <div class="email-body" id="emailDetailBody"></div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<script src="/static/pharma/app.js"></script>
+</body>
+</html>
