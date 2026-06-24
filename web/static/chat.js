@@ -1,7 +1,10 @@
 /* ── Tab switching ── */
-const VALID_TABS = ["search", "prec", "chat", "scheduler", "unified", "notifications", "lawprec"];
+const VALID_TABS = ["search", "prec", "chat", "scheduler", "ragtest", "unified", "notifications", "lawprec", "analysis", "keyword"];
 let lawLoaded  = false;
 let precLoaded = false;
+let summarizeEnabled = false;
+
+fetch("/api/health").then(r => r.json()).then(d => { summarizeEnabled = !!d.summarize_enabled; }).catch(() => {});
 
 function switchTab(name) {
   if (!VALID_TABS.includes(name)) name = "search";
@@ -14,8 +17,11 @@ function switchTab(name) {
   window.scrollTo(0, 0);
   if (name === "search" && !lawLoaded)  { lawLoaded = true;  search(""); }
   if (name === "prec"   && !precLoaded) { precLoaded = true; searchPrec(""); }
-  if (name === "scheduler")     { loadLaws(); loadLogs(); }
+  if (name === "scheduler") {
+    switchBatchSubTab(sessionStorage.getItem("batchSubTab") || "law");
+  }
   if (name === "notifications") { loadNotifications(); }
+  if (name === "ragtest") { loadRagtestLaws(); }
 }
 
 document.querySelectorAll(".tab").forEach(tab => {
@@ -355,7 +361,7 @@ function renderPrecDetail(container, data) {
     const citations = extractCitations(data.ref_articles);
     const citHtml = citations.length
       ? `<div class="law-links">${citations.map(c =>
-          `<button class="law-link-btn" data-law="${esc(c.lawName)}" data-jo="${c.joNum}" data-jo-sub="${c.joSub}">
+          `<button class="law-link-btn" data-law="${esc(c.lawName)}" data-jo="${c.joNum}" data-jo-sub="${c.joSub}" data-ho="${(c.hoNums||[]).join(",")}">
             ${esc(c.lawName)} ${esc(c.joText)}
           </button>`).join("")}</div>`
       : "";
@@ -376,7 +382,7 @@ function renderPrecDetail(container, data) {
   }
 
   const summarizeText = [data.issues, data.summary].filter(Boolean).join("\n").trim();
-  const toolbar = summarizeText
+  const toolbar = summarizeText && summarizeEnabled
     ? `<div class="card-detail-toolbar"><button class="btn-summarize">AI 요약</button></div>`
     : "";
 
@@ -385,7 +391,7 @@ function renderPrecDetail(container, data) {
   container.querySelectorAll(".law-link-btn").forEach(btn => {
     btn.addEventListener("click", e => {
       e.stopPropagation();
-      openArticlePanel(btn.dataset.law, Number(btn.dataset.jo), Number(btn.dataset.joSub));
+      openArticlePanel(btn.dataset.law, Number(btn.dataset.jo), Number(btn.dataset.joSub), btn.dataset.ho);
     });
   });
 
@@ -425,42 +431,54 @@ function renderPrecDetail(container, data) {
 }
 
 function extractCitations(refArticles) {
-  // 국가법령정보센터 API는 법령명을 <민법>, <도로교통법> 형식 태그로 표시함
-  // stripHtml 전에 이를 "민법 ", "도로교통법 "으로 변환
   let raw = String(refArticles || "");
-  raw = raw.replace(/<([^>]{1,50}(?:법|령|규칙|예규|조례|지침|규정))>/g, "$1 ");
+  raw = raw.replace(/<([^>]{1,80}(?:법|령|규칙|예규|조례|지침|규정))>/g, "$1 ");
   const text = stripHtml(raw);
   const results = [];
   const seen = new Set();
-  let currentLaw = "";
 
-  // 두 가지 패턴을 교대로 매칭:
-  // 1) 법령명 + 제N조  →  법령명 갱신
-  // 2) 제N조 단독      →  직전 법령명 이어받기
-  const re = /((?:[가-힣]+\s)*[가-힣]+(?:법|령|규칙|예규|조례|지침))\s*제(\d+)조(?:의(\d+))?|제(\d+)조(?:의(\d+))?/g;
+  // 토큰 추출: 법령명, 제N조(의M), 제N항, 제N호
+  const lawRe  = /(?:[가-힣]+(?:\s+|·))*[가-힣]+(?:법|령|규칙|예규|조례|지침|규정)/g;
+  const joRe   = /제(\d+)조(?:의(\d+))?/g;
+  const hangRe = /제(\d+)항/g;
+  const hoRe   = /제(\d+)호/g;
 
-  for (const m of text.matchAll(re)) {
-    let joNum, joSub;
+  // 모든 토큰을 위치 기준으로 정렬
+  const tokens = [];
+  for (const m of text.matchAll(lawRe))  tokens.push({ type: "law",  pos: m.index, name: m[0].trim() });
+  for (const m of text.matchAll(joRe))   tokens.push({ type: "jo",   pos: m.index, num: +m[1], sub: m[2] ? +m[2] : 0 });
+  for (const m of text.matchAll(hangRe)) tokens.push({ type: "hang", pos: m.index, num: +m[1] });
+  for (const m of text.matchAll(hoRe))   tokens.push({ type: "ho",   pos: m.index, num: +m[1] });
+  tokens.sort((a, b) => a.pos - b.pos);
 
-    if (m[1]) {
-      // 법령명 + 제N조
-      currentLaw = m[1].trim();
-      joNum = parseInt(m[2]);
-      joSub = m[3] ? parseInt(m[3]) : 0;
-    } else {
-      // 제N조 단독 — 이전 법령 이어받기
-      if (!currentLaw) continue;
-      joNum = parseInt(m[4]);
-      joSub = m[5] ? parseInt(m[5]) : 0;
+  let curLaw = "", curJo = 0, curJoSub = 0, curHangNums = [], curHoNums = [];
+
+  function flush() {
+    if (!curLaw || !curJo) return;
+    let joText = `제${curJo}조${curJoSub ? `의${curJoSub}` : ""}`;
+    if (curHangNums.length) joText += " " + curHangNums.map(h => `제${h}항`).join(", ");
+    if (curHoNums.length)   joText += " " + curHoNums.map(h => `제${h}호`).join(", ");
+    const key = `${curLaw}|${curJo}|${curJoSub}|${curHangNums}|${curHoNums}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      results.push({ lawName: curLaw, joText, joNum: curJo, joSub: curJoSub, hoNums: [...curHoNums] });
     }
-
-    if (!joNum) continue;
-    const joText = `제${joNum}조${joSub ? `의${joSub}` : ""}`;
-    const key = `${currentLaw}|${joNum}|${joSub}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    results.push({ lawName: currentLaw, joText, joNum, joSub });
   }
+
+  for (const tok of tokens) {
+    if (tok.type === "law") {
+      flush();
+      curLaw = tok.name; curJo = 0; curJoSub = 0; curHangNums = []; curHoNums = [];
+    } else if (tok.type === "jo") {
+      flush();
+      curJo = tok.num; curJoSub = tok.sub; curHangNums = []; curHoNums = [];
+    } else if (tok.type === "hang") {
+      curHangNums.push(tok.num);
+    } else if (tok.type === "ho") {
+      curHoNums.push(tok.num);
+    }
+  }
+  flush();
   return results;
 }
 
@@ -482,9 +500,12 @@ function closePanel() {
 
 panelClose.addEventListener("click", closePanel);
 
-async function openArticlePanel(lawName, joNum, joSub = 0) {
+async function openArticlePanel(lawName, joNum, joSub = 0, hoStr = "") {
+  const hoFilter = hoStr ? hoStr.split(",").map(Number).filter(Boolean) : [];
   panelLawName.textContent = lawName;
-  panelJoTitle.textContent = `제${joNum}조${joSub ? `의${joSub}` : ""}`;
+  let titleText = `제${joNum}조${joSub ? `의${joSub}` : ""}`;
+  if (hoFilter.length) titleText += " " + hoFilter.map(h => `제${h}호`).join(", ");
+  panelJoTitle.textContent = titleText;
   panelContent.innerHTML = '<div class="state-msg"><span class="spinner"></span>불러오는 중...</div>';
   openPanel();
   history.pushState({ panelOpen: true }, "");
@@ -503,7 +524,7 @@ async function openArticlePanel(lawName, joNum, joSub = 0) {
 
     panelLawName.textContent = data.searched_law_name || lawName;
 
-    panelContent.innerHTML = filterArticles(articles).map(buildArticleHtml).join("");
+    panelContent.innerHTML = filterArticles(articles).map(art => buildArticleHtml(art, hoFilter)).join("");
 
   } catch (err) {
     panelContent.innerHTML = `<div class="state-msg error">${err.message}</div>`;
@@ -645,6 +666,32 @@ function linkifyCaseNums(bubble) {
   ).join("");
 }
 
+function linkifyLawNames(bubble) {
+  if (!ragtestLaws.length) return;
+  for (const lawName of ragtestLaws) {
+    const walker = document.createTreeWalker(bubble, NodeFilter.SHOW_TEXT);
+    const nodes = [];
+    let node;
+    while ((node = walker.nextNode())) nodes.push(node);
+    for (const textNode of nodes) {
+      if (!textNode.textContent.includes(lawName)) continue;
+      const parts = textNode.textContent.split(lawName);
+      const frag = document.createDocumentFragment();
+      parts.forEach((p, i) => {
+        frag.appendChild(document.createTextNode(p));
+        if (i < parts.length - 1) {
+          const btn = document.createElement("button");
+          btn.className = "law-ref-link";
+          btn.dataset.lawName = lawName;
+          btn.textContent = lawName;
+          frag.appendChild(btn);
+        }
+      });
+      textNode.parentNode.replaceChild(frag, textNode);
+    }
+  }
+}
+
 
 chatForm.addEventListener("submit", e => { e.preventDefault(); sendMessage(chatInput.value); });
 
@@ -713,23 +760,34 @@ function filterArticles(articles) {
   });
 }
 
-function buildArticleHtml(art) {
+function buildArticleHtml(art, hoFilter = []) {
   const num   = art["조문번호"] || "";
   const title = art["조문제목"] || "";
-  const hangs = Array.isArray(art["항"]) ? art["항"] : [];
+  let rawHangs = art["항"];
+  const hangs = Array.isArray(rawHangs) ? rawHangs : (rawHangs && typeof rawHangs === "object" ? [rawHangs] : []);
 
   let body = "";
 
   if (hangs.length > 0) {
     body = hangs.map(hang => {
       const hangContent = String(hang["항내용"] || "").trim();
-      const hos = Array.isArray(hang["호"]) ? hang["호"] : [];
+      let rawHos = hang["호"];
+      let hos = Array.isArray(rawHos) ? rawHos : (rawHos && typeof rawHos === "object" ? [rawHos] : []);
+      // 호 필터가 있으면 해당 호만 표시
+      if (hoFilter.length > 0 && hos.length > 0) {
+        hos = hos.filter(ho => {
+          const hoNum = parseInt(String(ho["호번호"] || "").replace(/\D/g, ""));
+          return hoFilter.includes(hoNum);
+        });
+      }
       const hoHtml = hos.map(ho =>
         `<div class="ho-item">${esc(String(ho["호내용"] || "").trim())}</div>`
       ).join("");
-      return `<div class="hang-item">${esc(hangContent)}${hoHtml}</div>`;
+      return `<div class="hang-item">${hangContent ? esc(hangContent) : ""}${hoHtml}</div>`;
     }).join("");
-  } else {
+  }
+
+  if (!body) {
     let content = String(art["조문내용"] || "").trim();
     const headerPattern = new RegExp(`^제${num}조(?:\\([^)]+\\))?\\s*`);
     content = content.replace(headerPattern, "").trim();
@@ -745,546 +803,744 @@ function buildArticleHtml(art) {
 
 
 /* ════════════════════════════════
-   수집 관리 탭 (Scheduler)
+   수집 관리 탭 — 서브탭 전환
    ════════════════════════════════ */
-const lawList        = document.getElementById("lawList");
-const logList        = document.getElementById("logList");
-const addLawBtn      = document.getElementById("addLawBtn");
-const refreshLogsBtn = document.getElementById("refreshLogsBtn");
-const lawModal       = document.getElementById("lawModal");
-const modalTitle     = document.getElementById("modalTitle");
-const modalLawName   = document.getElementById("modalLawName");
-const modalCollectType = document.getElementById("modalCollectType");
-const modalInterval  = document.getElementById("modalInterval");
-const modalSave      = document.getElementById("modalSave");
-const modalCancel    = document.getElementById("modalCancel");
-const modalClose     = document.getElementById("modalClose");
-const lawNameDropdown = document.getElementById("lawNameDropdown");
-const daySelector    = document.getElementById("daySelector");
-const dayLabel       = document.getElementById("dayLabel");
-const weekdayPicker  = document.getElementById("weekdayPicker");
-const monthdayPicker = document.getElementById("monthdayPicker");
-const modalHour      = document.getElementById("modalHour");
-const modalMinute    = document.getElementById("modalMinute");
-
-// 날짜 선택 옵션 초기화 (1~31일)
-for (let d = 1; d <= 31; d++) {
-  const opt = document.createElement("option");
-  opt.value = String(d);
-  opt.textContent = `${d}일`;
-  monthdayPicker.appendChild(opt);
+function switchBatchSubTab(sub) {
+  document.querySelectorAll(".batch-sub-tab").forEach(b =>
+    b.classList.toggle("active", b.dataset.sub === sub));
+  document.getElementById("batch-sub-law").style.display  = sub === "law"  ? "flex" : "none";
+  document.getElementById("batch-sub-prec").style.display = sub === "prec" ? "flex" : "none";
+  sessionStorage.setItem("batchSubTab", sub);
+  if (sub === "law")  { loadLawBatchConfig();  loadLawBatchLogs();  }
+  if (sub === "prec") { loadPrecBatchConfig(); loadPrecBatchLogs(); }
 }
 
-// 시간 선택 옵션 초기화 (0~23시)
-for (let h = 0; h < 24; h++) {
-  const opt = document.createElement("option");
-  opt.value = String(h).padStart(2, "0");
-  opt.textContent = `${String(h).padStart(2, "0")}시`;
-  if (h === 9) opt.selected = true;
-  modalHour.appendChild(opt);
-}
+document.querySelectorAll(".batch-sub-tab").forEach(btn =>
+  btn.addEventListener("click", () => switchBatchSubTab(btn.dataset.sub)));
 
-let editingLawId = null;
-let selectedDay   = null;
-let acTimer       = null;
+/* ════════════════════════════════
+   법령 수집 탭 (Law Batch)
+   ════════════════════════════════ */
+const PAGE_SIZE = 10;
+const LOG_PAGE_SIZE = 5;
 
-const STATUS_LABEL = { idle: "대기", running: "실행중", success: "완료", failed: "실패" };
-
-function fmtScheduleInterval(interval, day, time) {
-  const t = time ? ` ${time}` : "";
-  if (interval === "daily")   return `매일${t}`;
-  if (interval === "weekly")  return day ? `매주 ${day}요일${t}` : `매주${t}`;
-  if (interval === "monthly") return day ? `매월 ${day}일${t}` : `매월${t}`;
-  return interval;
-}
-
-/* ── 페이지네이션 공통 ── */
-const SCHED_LAW_PAGE_SIZE = 6;
-const LOG_PAGE_SIZE = 10;
-
-function renderPagination(container, total, page, pageSize, onPageChange) {
+function renderBatchPagination(containerId, total, page, pageSize, onPage) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
   const totalPages = Math.ceil(total / pageSize);
-  if (totalPages <= 1) { container.innerHTML = ""; return; }
+  if (totalPages <= 1) { el.innerHTML = ""; return; }
+
+  // 현재 페이지 중심으로 최대 5개 번호 윈도우
+  const WINDOW = 5;
+  let start = Math.max(1, page - Math.floor(WINDOW / 2));
+  let end   = start + WINDOW - 1;
+  if (end > totalPages) { end = totalPages; start = Math.max(1, end - WINDOW + 1); }
 
   const pages = [];
-  for (let i = 1; i <= totalPages; i++) {
-    if (i === 1 || i === totalPages || Math.abs(i - page) <= 2) {
-      pages.push(i);
-    } else if (pages[pages.length - 1] !== "…") {
-      pages.push("…");
-    }
-  }
+  for (let i = start; i <= end; i++) pages.push(i);
 
-  container.innerHTML = `
-    <button class="page-btn" data-page="${page - 1}" ${page <= 1 ? "disabled" : ""}>‹</button>
-    ${pages.map(p => p === "…"
-      ? `<span class="page-ellipsis">…</span>`
-      : `<button class="page-btn ${p === page ? "active" : ""}" data-page="${p}">${p}</button>`
-    ).join("")}
-    <button class="page-btn" data-page="${page + 1}" ${page >= totalPages ? "disabled" : ""}>›</button>`;
+  const btn = (p, label, disabled, active = false) =>
+    `<button class="page-btn${active ? " active" : ""}" ${disabled ? "disabled" : ""} data-p="${p}">${label}</button>`;
 
-  container.querySelectorAll(".page-btn:not([disabled])").forEach(btn =>
-    btn.addEventListener("click", () => onPageChange(parseInt(btn.dataset.page)))
-  );
+  el.innerHTML =
+    btn(1,           "«", page <= 1) +
+    btn(page - 1,   "‹", page <= 1) +
+    pages.map(p => btn(p, p, false, p === page)).join("") +
+    btn(page + 1,   "›", page >= totalPages) +
+    btn(totalPages, "»", page >= totalPages);
+
+  el.querySelectorAll(".page-btn:not([disabled])").forEach(b =>
+    b.addEventListener("click", () => onPage(+b.dataset.p)));
 }
 
-/* ── 법령 목록 로드 ── */
-let allLaws = [], lawPage = 1;
+/* --- 법령 배치 --- */
+let allLawBatchLaws = [], lawBatchLawPage = 1;
+let allLawBatchLogs = [], lawBatchLogPage = 1;
 
-async function loadLaws() {
+async function loadLawBatchConfig() {
   try {
-    const res  = await fetch("/api/scheduler/laws");
+    const res  = await fetch("/api/batch/law/config");
     const data = await res.json();
-    allLaws = data.laws || [];
-    lawPage = 1;
-    renderLawPage();
+    const el = document.getElementById("lawBatchRunTime");
+    if (el) el.value = data.run_time || "02:00";
+    allLawBatchLaws = data.laws || [];
+    lawBatchLawPage = 1;
+    renderLawBatchLawPage();
   } catch (e) {
-    lawList.innerHTML = `<div class="empty-msg">불러오기 실패: ${esc(e.message)}</div>`;
+    const el = document.getElementById("lawBatchLawList");
+    if (el) el.innerHTML = `<div class="empty-msg">불러오기 실패: ${esc(e.message)}</div>`;
   }
 }
 
-function renderLawPage() {
-  const start = (lawPage - 1) * SCHED_LAW_PAGE_SIZE;
-  renderLawTable(allLaws.slice(start, start + SCHED_LAW_PAGE_SIZE));
-  renderPagination(
-    document.getElementById("lawPagination"),
-    allLaws.length, lawPage, SCHED_LAW_PAGE_SIZE,
-    p => { lawPage = p; renderLawPage(); }
-  );
+function renderLawBatchLawPage() {
+  const start = (lawBatchLawPage - 1) * PAGE_SIZE;
+  const page  = allLawBatchLaws.slice(start, start + PAGE_SIZE);
+  renderLawBatchLawList(page, allLawBatchLaws.length);
+  renderBatchPagination("lawBatchLawPagination", allLawBatchLaws.length, lawBatchLawPage, PAGE_SIZE, p => {
+    lawBatchLawPage = p; renderLawBatchLawPage();
+  });
 }
 
-const COLLECT_TYPE_LABEL = { "전체": "법령+판례", "법령": "법령", "판례": "판례" };
-
-function renderLawTable(laws) {
+function renderLawBatchLawList(laws, total = laws.length) {
+  const countEl = document.getElementById("lawBatchLawCount");
+  if (countEl) countEl.textContent = total ? `${total}건` : "";
+  const el = document.getElementById("lawBatchLawList");
+  if (!el) return;
   if (!laws.length) {
-    lawList.innerHTML = '<div class="empty-msg">등록된 법령이 없습니다.</div>';
+    el.innerHTML = '<div class="empty-msg">수집 대상 법령이 없습니다.</div>';
     return;
   }
-  lawList.innerHTML = laws.map(law => {
-    const status      = law.status || "idle";
-    const day         = law.day  || "";
-    const time        = law.time || "09:00";
-    const collectType = law.collect_type || "전체";
+  el.innerHTML = laws.map(law => {
+    const active   = law.active !== false;
+    const uploaded = law.last_knowledge_upload ? law.last_knowledge_upload.slice(0, 16) : "-";
+    const efDate   = law.last_enforcement_date || "-";
+    const cls = !active ? "status-failed" : (law.last_knowledge_upload ? "status-success" : "status-pending");
+    const txt = !active ? "폐지감지" : (law.last_knowledge_upload ? "수집완료" : "미수집");
+    return `
+      <div class="law-card${!active ? " law-card-inactive" : ""}">
+        <div class="law-card-top">
+          <span class="law-card-name">${esc(law.name)}</span>
+          <div style="display:flex;align-items:center;gap:0.5rem">
+            <span class="status-badge ${cls}">${txt}</span>
+            <button class="btn-delete law-batch-law-del" data-name="${esc(law.name)}">삭제</button>
+          </div>
+        </div>
+        <div class="law-card-meta">
+          <span class="law-meta-item"><span class="law-meta-label">시행일자</span><span>${esc(efDate)}</span></span>
+          <span class="law-meta-item"><span class="law-meta-label">최근 업로드</span><span>${esc(uploaded)}</span></span>
+        </div>
+      </div>`;
+  }).join("");
+  el.querySelectorAll(".law-batch-law-del").forEach(btn =>
+    btn.addEventListener("click", () => deleteLawBatchLaw(btn.dataset.name)));
+}
+
+async function deleteLawBatchLaw(name) {
+  if (!confirm(`"${name}"을(를) 수집 목록에서 삭제하시겠습니까?`)) return;
+  try {
+    const res = await fetch(`/api/batch/law/laws/${encodeURIComponent(name)}`, { method: "DELETE" });
+    if (!res.ok) throw new Error("삭제 오류");
+    const saved = lawBatchLawPage;
+    const data  = await (await fetch("/api/batch/law/config")).json();
+    const el = document.getElementById("lawBatchRunTime");
+    if (el) el.value = data.run_time || "02:00";
+    allLawBatchLaws = data.laws || [];
+    lawBatchLawPage = Math.min(saved, Math.max(1, Math.ceil(allLawBatchLaws.length / PAGE_SIZE)));
+    renderLawBatchLawPage();
+  } catch (e) { alert(`삭제 실패: ${e.message}`); }
+}
+
+document.getElementById("saveLawBatchTimeBtn")?.addEventListener("click", async () => {
+  const t = document.getElementById("lawBatchRunTime")?.value;
+  if (!t) return;
+  try {
+    const res = await fetch("/api/batch/law/config/run-time", {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ run_time: t }),
+    });
+    if (!res.ok) throw new Error("저장 오류");
+    const savedEl = document.getElementById("lawBatchTimeSaved");
+    if (savedEl) { savedEl.style.display = "inline"; setTimeout(() => { savedEl.style.display = "none"; }, 2000); }
+  } catch (e) { alert(`저장 실패: ${e.message}`); }
+});
+
+document.getElementById("loadLawDefaultsBtn")?.addEventListener("click", async () => {
+  if (!confirm("고용노동부 소관 법령 전체(약 142건)를 수집 목록에 추가합니다.")) return;
+  const btn = document.getElementById("loadLawDefaultsBtn");
+  btn.disabled = true; btn.textContent = "불러오는 중...";
+  try {
+    const res  = await fetch("/api/batch/law/laws/load-defaults", { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "오류");
+    await loadLawBatchConfig();
+    alert(`${data.added_count}건 추가되었습니다. (전체 ${data.total}건)`);
+  } catch (e) { alert(`실패: ${e.message}`); }
+  finally { btn.disabled = false; btn.textContent = "고용노동부 법령 전체 불러오기"; }
+});
+
+document.getElementById("runLawBatchNowBtn")?.addEventListener("click", async () => {
+  if (!confirm("지금 바로 법령 수집 배치를 실행하시겠습니까?")) return;
+  const btn = document.getElementById("runLawBatchNowBtn");
+  const statusEl = document.getElementById("lawBatchRunStatus");
+  btn.disabled = true; btn.textContent = "실행중...";
+  if (statusEl) { statusEl.style.display = "block"; statusEl.textContent = "배치 실행 중입니다..."; statusEl.className = "batch-run-status running"; }
+  try {
+    const res  = await fetch("/api/batch/law/run", { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "실행 오류");
+    if (statusEl) {
+      statusEl.textContent = `완료: 전체 ${data.total}건, 변동 ${data.changed}건, 오류 ${data.errors}건 (${data.elapsed_sec || 0}초)`;
+      statusEl.className = "batch-run-status done";
+    }
+    await loadLawBatchConfig(); await loadLawBatchLogs();
+  } catch (e) {
+    if (statusEl) { statusEl.textContent = `실패: ${e.message}`; statusEl.className = "batch-run-status error"; }
+  } finally { btn.disabled = false; btn.textContent = "지금 실행"; }
+});
+
+document.getElementById("addLawBatchLawBtn")?.addEventListener("click", () => {
+  const form = document.getElementById("addLawBatchLawForm");
+  if (!form) return;
+  form.style.display = form.style.display === "none" ? "flex" : "none";
+  if (form.style.display === "flex") document.getElementById("lawBatchLawNameInput")?.focus();
+});
+document.getElementById("cancelAddLawBatchLawBtn")?.addEventListener("click", () => {
+  const form = document.getElementById("addLawBatchLawForm");
+  if (form) form.style.display = "none";
+  const inp = document.getElementById("lawBatchLawNameInput");
+  if (inp) inp.value = "";
+});
+document.getElementById("confirmAddLawBatchLawBtn")?.addEventListener("click", async () => {
+  const inp  = document.getElementById("lawBatchLawNameInput");
+  const name = inp?.value.trim();
+  if (!name) { inp?.focus(); return; }
+  try {
+    const res  = await fetch("/api/batch/law/laws", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ names: [name] }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "추가 오류");
+    const form = document.getElementById("addLawBatchLawForm");
+    if (form) form.style.display = "none";
+    if (inp) inp.value = "";
+    const d2 = await (await fetch("/api/batch/law/config")).json();
+    const timeEl = document.getElementById("lawBatchRunTime");
+    if (timeEl) timeEl.value = d2.run_time || "02:00";
+    allLawBatchLaws = d2.laws || [];
+    lawBatchLawPage = Math.ceil(allLawBatchLaws.length / PAGE_SIZE) || 1;
+    renderLawBatchLawPage();
+  } catch (e) { alert(`추가 실패: ${e.message}`); }
+});
+document.getElementById("lawBatchLawNameInput")?.addEventListener("keydown", e => {
+  if (e.key === "Enter")  document.getElementById("confirmAddLawBatchLawBtn")?.click();
+  if (e.key === "Escape") document.getElementById("cancelAddLawBatchLawBtn")?.click();
+});
+
+async function loadLawBatchLogs() {
+  const el = document.getElementById("lawBatchLogList");
+  if (!el) return;
+  try {
+    const data = await (await fetch("/api/batch/law/logs")).json();
+    allLawBatchLogs = data.logs || [];
+    lawBatchLogPage = 1;
+    renderLawBatchLogPage();
+  } catch (e) { el.innerHTML = `<div class="empty-msg">불러오기 실패: ${esc(e.message)}</div>`; }
+}
+
+function renderLawBatchLogPage() {
+  const start = (lawBatchLogPage - 1) * LOG_PAGE_SIZE;
+  renderBatchLogList("lawBatchLogList", allLawBatchLogs.slice(start, start + LOG_PAGE_SIZE));
+  renderBatchPagination("lawBatchLogPagination", allLawBatchLogs.length, lawBatchLogPage, LOG_PAGE_SIZE, p => {
+    lawBatchLogPage = p; renderLawBatchLogPage();
+  });
+}
+
+document.getElementById("refreshLawBatchLogsBtn")?.addEventListener("click", loadLawBatchLogs);
+
+/* --- 판례 배치 (법령 목록은 법령 탭과 공유) --- */
+let allPrecBatchLaws = [], precBatchLawPage = 1;
+let allPrecBatchLogs = [], precBatchLogPage = 1;
+
+async function loadPrecBatchConfig() {
+  try {
+    const res  = await fetch("/api/batch/prec/config");
+    const data = await res.json();
+    const el = document.getElementById("precBatchRunTime");
+    if (el) el.value = data.run_time || "03:00";
+    allPrecBatchLaws = data.laws || [];
+    precBatchLawPage = 1;
+    renderPrecBatchLawPage();
+  } catch (e) {
+    const el = document.getElementById("precBatchLawList");
+    if (el) el.innerHTML = `<div class="empty-msg">불러오기 실패: ${esc(e.message)}</div>`;
+  }
+}
+
+function renderPrecBatchLawPage() {
+  const start = (precBatchLawPage - 1) * PAGE_SIZE;
+  const page  = allPrecBatchLaws.slice(start, start + PAGE_SIZE);
+  renderPrecBatchLawList(page, allPrecBatchLaws.length);
+  renderBatchPagination("precBatchLawPagination", allPrecBatchLaws.length, precBatchLawPage, PAGE_SIZE, p => {
+    precBatchLawPage = p; renderPrecBatchLawPage();
+  });
+}
+
+function renderPrecBatchLawList(laws, total = laws.length) {
+  const countEl = document.getElementById("precBatchLawCount");
+  if (countEl) {
+    const totalPrecs    = allPrecBatchLaws.reduce((s, l) => s + (Number(l.last_prec_count)  || 0), 0);
+    const totalUploaded = allPrecBatchLaws.reduce((s, l) => s + (Number(l.uploaded_count) || 0), 0);
+    countEl.textContent = totalPrecs
+      ? `총 ${totalPrecs.toLocaleString()}건 · 업로드 ${totalUploaded.toLocaleString()}건`
+      : (total ? `${total}개 법령` : "");
+  }
+  const el = document.getElementById("precBatchLawList");
+  if (!el) return;
+  if (!laws.length) {
+    el.innerHTML = '<div class="empty-msg">수집 대상 법령이 없습니다.</div>';
+    return;
+  }
+  el.innerHTML = laws.map(law => {
+    const cnt      = law.last_prec_count != null ? `${Number(law.last_prec_count).toLocaleString()}건` : "-";
+    const uploaded = law.last_prec_knowledge_upload ? law.last_prec_knowledge_upload.slice(0, 16) : "-";
+    const upCnt    = law.uploaded_count != null ? Number(law.uploaded_count).toLocaleString() : "0";
+    const totalCnt  = Number(law.last_prec_count) || 0;
+    const uploadCnt = Number(law.uploaded_count) || 0;
+    const cls = !law.last_prec_knowledge_upload ? "status-pending"
+              : uploadCnt >= totalCnt ? "status-success" : "status-failed";
+    const txt = !law.last_prec_knowledge_upload ? "미수집"
+              : uploadCnt >= totalCnt ? "수집완료" : "수집중";
     return `
       <div class="law-card">
         <div class="law-card-top">
           <span class="law-card-name">${esc(law.name)}</span>
-          <span class="status-badge status-${esc(status)}">${esc(STATUS_LABEL[status] || status)}</span>
+          <div style="display:flex;align-items:center;gap:0.5rem">
+            <span class="status-badge ${cls}">${txt}</span>
+            <button class="btn-delete prec-batch-law-del" data-name="${esc(law.name)}">삭제</button>
+          </div>
         </div>
         <div class="law-card-meta">
-          <span class="law-meta-item">
-            <span class="law-meta-label">수집 대상</span>
-            <span class="badge">${esc(COLLECT_TYPE_LABEL[collectType] || collectType)}</span>
-          </span>
-          <span class="law-meta-item">
-            <span class="law-meta-label">주기</span>
-            <span>${esc(fmtScheduleInterval(law.interval, day, time))}</span>
-          </span>
-        </div>
-        <div class="law-card-meta">
-          <span class="law-meta-item">
-            <span class="law-meta-label">최근 수집</span>
-            <span>${esc(law.last_run || "-")}</span>
-          </span>
-          <span class="law-meta-item">
-            <span class="law-meta-label">다음 수집</span>
-            <span>${esc(law.next_run || "-")}</span>
-          </span>
-        </div>
-        <div class="law-card-actions">
-          <button class="btn-run"    data-id="${esc(law.id)}" data-name="${esc(law.name)}">수집</button>
-          <button class="btn-edit"   data-id="${esc(law.id)}" data-name="${esc(law.name)}" data-interval="${esc(law.interval)}" data-day="${esc(day)}" data-time="${esc(time)}" data-collect-type="${esc(collectType)}">편집</button>
-          <button class="btn-delete" data-id="${esc(law.id)}" data-name="${esc(law.name)}">삭제</button>
+          <span class="law-meta-item"><span class="law-meta-label">총 판례</span><span>${cnt}</span></span>
+          <span class="law-meta-item"><span class="law-meta-label">Knowledge 업로드</span><span>${upCnt}건</span></span>
+          <span class="law-meta-item"><span class="law-meta-label">최근 수집</span><span>${esc(uploaded)}</span></span>
         </div>
       </div>`;
   }).join("");
-
-  lawList.querySelectorAll(".btn-run").forEach(btn =>
-    btn.addEventListener("click", () => runLaw(btn.dataset.id, btn.dataset.name, btn)));
-  lawList.querySelectorAll(".btn-edit").forEach(btn =>
-    btn.addEventListener("click", () => openModal(btn.dataset.id, btn.dataset.name, btn.dataset.interval, btn.dataset.day || null, btn.dataset.time || "09:00", btn.dataset.collectType || "전체")));
-  lawList.querySelectorAll(".btn-delete").forEach(btn =>
-    btn.addEventListener("click", () => deleteLaw(btn.dataset.id, btn.dataset.name)));
+  el.querySelectorAll(".prec-batch-law-del").forEach(btn =>
+    btn.addEventListener("click", () => deletePrecBatchLaw(btn.dataset.name)));
 }
 
-async function runLaw(id, name, btn) {
-  if (!confirm(`"${name}" 수집을 지금 실행하시겠습니까?`)) return;
-  btn.disabled = true;
-  btn.textContent = "실행중...";
+async function deletePrecBatchLaw(name) {
+  if (!confirm(`"${name}"을(를) 판례 수집 목록에서 삭제하시겠습니까?`)) return;
   try {
-    const res = await fetch(`/api/scheduler/laws/${id}/run`, { method: "POST" });
-    const log = await res.json();
-    if (!res.ok) throw new Error(log.detail || "실행 오류");
-    await loadLaws();
-    await loadLogs();
-  } catch (e) {
-    alert(`수집 실패: ${e.message}`);
-    btn.disabled = false;
-    btn.textContent = "수집";
-  }
+    const res = await fetch(`/api/batch/prec/laws/${encodeURIComponent(name)}`, { method: "DELETE" });
+    if (!res.ok) throw new Error("삭제 오류");
+    await loadPrecBatchConfig();
+  } catch (e) { alert(`삭제 실패: ${e.message}`); }
 }
 
-async function deleteLaw(id, name) {
-  if (!confirm(`"${name}"을(를) 삭제하시겠습니까?`)) return;
-  try {
-    const res = await fetch(`/api/scheduler/laws/${id}`, { method: "DELETE" });
-    if (!res.ok) {
-      const d = await res.json();
-      throw new Error(d.detail || "삭제 오류");
-    }
-    await loadLaws();
-  } catch (e) {
-    alert(`삭제 실패: ${e.message}`);
-  }
-}
-
-/* ── 요일/날짜 선택 ── */
-function updateDaySelector(interval, day) {
-  if (interval === "weekly") {
-    daySelector.style.display = "block";
-    dayLabel.textContent = "요일 선택";
-    weekdayPicker.style.display = "flex";
-    monthdayPicker.style.display = "none";
-    const target = day || "월";
-    selectedDay = target;
-    weekdayPicker.querySelectorAll(".weekday-btn").forEach(b =>
-      b.classList.toggle("active", b.dataset.day === target));
-  } else if (interval === "monthly") {
-    daySelector.style.display = "block";
-    dayLabel.textContent = "날짜 선택";
-    weekdayPicker.style.display = "none";
-    monthdayPicker.style.display = "block";
-    const target = day || "1";
-    selectedDay = target;
-    monthdayPicker.value = target;
-  } else {
-    daySelector.style.display = "none";
-    selectedDay = null;
-  }
-}
-
-modalInterval.addEventListener("change", () => updateDaySelector(modalInterval.value, null));
-
-weekdayPicker.querySelectorAll(".weekday-btn").forEach(btn =>
-  btn.addEventListener("click", () => {
-    weekdayPicker.querySelectorAll(".weekday-btn").forEach(b => b.classList.remove("active"));
-    btn.classList.add("active");
-    selectedDay = btn.dataset.day;
-  }));
-
-monthdayPicker.addEventListener("change", () => { selectedDay = monthdayPicker.value; });
-
-/* ── 법령명 자동완성 ── */
-modalLawName.addEventListener("input", () => {
-  const q = modalLawName.value.trim();
-  clearTimeout(acTimer);
-  if (q.length < 1) { hideLawDropdown(); return; }
-  acTimer = setTimeout(() => fetchLawSuggestions(q), 280);
+document.getElementById("addPrecBatchLawBtn")?.addEventListener("click", () => {
+  const form = document.getElementById("addPrecBatchLawForm");
+  form.style.display = form.style.display === "none" ? "flex" : "none";
+  if (form.style.display === "flex") document.getElementById("precBatchLawNameInput")?.focus();
 });
 
-async function fetchLawSuggestions(q) {
-  try {
-    const res  = await fetch(`/api/law/search?q=${encodeURIComponent(q)}&display=10`);
-    const data = await res.json();
-    showLawDropdown(data.laws || []);
-  } catch { hideLawDropdown(); }
-}
-
-function showLawDropdown(laws) {
-  if (!laws.length) { hideLawDropdown(); return; }
-  lawNameDropdown.innerHTML = laws.map(law => {
-    const name = law["법령명한글"] || law["법령명"] || "";
-    return `<li class="autocomplete-item" data-name="${esc(name)}">${esc(name)}</li>`;
-  }).join("");
-  lawNameDropdown.style.display = "block";
-  lawNameDropdown.querySelectorAll(".autocomplete-item").forEach(li =>
-    li.addEventListener("click", () => {
-      modalLawName.value = li.dataset.name;
-      hideLawDropdown();
-    }));
-}
-
-function hideLawDropdown() {
-  lawNameDropdown.style.display = "none";
-  lawNameDropdown.innerHTML = "";
-}
-
-document.addEventListener("click", e => {
-  if (!e.target.closest(".autocomplete-wrap")) hideLawDropdown();
+document.getElementById("cancelAddPrecBatchLawBtn")?.addEventListener("click", () => {
+  const form = document.getElementById("addPrecBatchLawForm");
+  if (form) form.style.display = "none";
 });
 
-/* ── 모달 열기/닫기 ── */
-function openModal(id = null, name = "", interval = "weekly", day = null, time = "09:00", collectType = "전체") {
-  editingLawId = id;
-  modalTitle.textContent = id ? "법령 편집" : "법령 추가";
-  modalLawName.value = name;
-  modalCollectType.value = collectType;
-  modalInterval.value = interval;
-  const [hh, mm] = (time || "09:00").split(":");
-  modalHour.value   = String(parseInt(hh, 10)).padStart(2, "0");
-  modalMinute.value = (["00","10","20","30","40","50"].includes(mm) ? mm : "00");
-  hideLawDropdown();
-  updateDaySelector(interval, day);
-  const sw = window.innerWidth - document.documentElement.clientWidth;
-  document.body.style.overflow = "hidden";
-  document.body.style.paddingRight = `${sw}px`;
-  lawModal.style.display = "flex";
-  setTimeout(() => modalLawName.focus(), 30);
-}
-
-function closeModal() {
-  lawModal.style.display = "none";
-  document.body.style.overflow = "";
-  document.body.style.paddingRight = "";
-  editingLawId = null;
-  hideLawDropdown();
-}
-
-modalClose.addEventListener("click", closeModal);
-modalCancel.addEventListener("click", closeModal);
-lawModal.addEventListener("click", e => { if (e.target === lawModal) closeModal(); });
-
-modalSave.addEventListener("click", async () => {
-  const name        = modalLawName.value.trim();
-  const interval    = modalInterval.value;
-  const day         = selectedDay || null;
-  const time        = `${modalHour.value}:${modalMinute.value}`;
-  const collectType = modalCollectType.value;
-  if (!name) { modalLawName.focus(); return; }
-
-  modalSave.disabled = true;
+document.getElementById("confirmAddPrecBatchLawBtn")?.addEventListener("click", async () => {
+  const input = document.getElementById("precBatchLawNameInput");
+  const name  = input?.value.trim();
+  if (!name) return;
   try {
-    const url    = editingLawId ? `/api/scheduler/laws/${editingLawId}` : "/api/scheduler/laws";
-    const method = editingLawId ? "PUT" : "POST";
-    const res    = await fetch(url, {
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, interval, day, time, collect_type: collectType }),
+    const res = await fetch("/api/batch/prec/laws", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ names: [name] }),
     });
-    if (!res.ok) {
-      const d = await res.json();
-      throw new Error(d.detail || "저장 오류");
-    }
-    closeModal();
-    await loadLaws();
-  } catch (e) {
-    alert(`저장 실패: ${e.message}`);
-  } finally {
-    modalSave.disabled = false;
-  }
+    if (!res.ok) throw new Error("추가 실패");
+    input.value = "";
+    const form = document.getElementById("addPrecBatchLawForm");
+    if (form) form.style.display = "none";
+    await loadPrecBatchConfig();
+  } catch (e) { alert(`추가 실패: ${e.message}`); }
 });
 
-addLawBtn.addEventListener("click", () => openModal());
-
-/* ── 추천 법령 모달 ── */
-const presetLawBtn        = document.getElementById("presetLawBtn");
-const presetModal         = document.getElementById("presetModal");
-const presetModalClose    = document.getElementById("presetModalClose");
-const presetCancel        = document.getElementById("presetCancel");
-const presetAdd           = document.getElementById("presetAdd");
-const presetList          = document.getElementById("presetList");
-const presetInterval      = document.getElementById("presetInterval");
-const presetWeekdayPicker = document.getElementById("presetWeekdayPicker");
-const presetMonthdayPicker= document.getElementById("presetMonthdayPicker");
-const presetCountLabel    = document.getElementById("presetCount");
-const presetHour          = document.getElementById("presetHour");
-const presetMinute        = document.getElementById("presetMinute");
-
-// 날짜 옵션 초기화
-for (let d = 1; d <= 31; d++) {
-  const opt = document.createElement("option");
-  opt.value = String(d); opt.textContent = `${d}일`;
-  presetMonthdayPicker.appendChild(opt);
-}
-
-// 시간 옵션 초기화
-for (let h = 0; h < 24; h++) {
-  const opt = document.createElement("option");
-  opt.value = String(h).padStart(2, "0");
-  opt.textContent = `${String(h).padStart(2, "0")}시`;
-  if (h === 9) opt.selected = true;
-  presetHour.appendChild(opt);
-}
-
-let presetSelectedDay = "월";
-let presetSelectedNames = new Set();
-
-presetInterval.addEventListener("change", () => {
-  const iv = presetInterval.value;
-  if (iv === "weekly") {
-    presetWeekdayPicker.style.display = "flex";
-    presetMonthdayPicker.style.display = "none";
-    presetSelectedDay = presetWeekdayPicker.querySelector(".weekday-btn.active")?.dataset.day || "월";
-  } else if (iv === "monthly") {
-    presetWeekdayPicker.style.display = "none";
-    presetMonthdayPicker.style.display = "block";
-    presetSelectedDay = presetMonthdayPicker.value;
-  } else {
-    presetWeekdayPicker.style.display = "none";
-    presetMonthdayPicker.style.display = "none";
-    presetSelectedDay = null;
-  }
-});
-
-presetWeekdayPicker.querySelectorAll(".weekday-btn").forEach(btn =>
-  btn.addEventListener("click", () => {
-    presetWeekdayPicker.querySelectorAll(".weekday-btn").forEach(b => b.classList.remove("active"));
-    btn.classList.add("active");
-    presetSelectedDay = btn.dataset.day;
-  }));
-
-presetMonthdayPicker.addEventListener("change", () => { presetSelectedDay = presetMonthdayPicker.value; });
-
-function updatePresetCount() {
-  const n = presetSelectedNames.size;
-  presetCountLabel.textContent = n ? `${n}개 선택됨` : "";
-}
-
-async function openPresetModal() {
-  presetSelectedNames.clear();
+document.getElementById("savePrecBatchTimeBtn")?.addEventListener("click", async () => {
+  const t = document.getElementById("precBatchRunTime")?.value;
+  if (!t) return;
   try {
-    const [pRes, lRes] = await Promise.all([
-      fetch("/api/scheduler/presets"),
-      fetch("/api/scheduler/laws"),
-    ]);
-    const { presets } = await pRes.json();
-    const { laws }    = await lRes.json();
-    const existing    = new Set((laws || []).map(l => l.name));
-
-    const grouped = {};
-    (presets || []).forEach(p => {
-      if (!grouped[p.category]) grouped[p.category] = [];
-      grouped[p.category].push(p);
+    const res = await fetch("/api/batch/prec/config/run-time", {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ run_time: t }),
     });
+    if (!res.ok) throw new Error("저장 오류");
+    const savedEl = document.getElementById("precBatchTimeSaved");
+    if (savedEl) { savedEl.style.display = "inline"; setTimeout(() => { savedEl.style.display = "none"; }, 2000); }
+  } catch (e) { alert(`저장 실패: ${e.message}`); }
+});
 
-    presetList.innerHTML = Object.entries(grouped).map(([cat, items]) => `
-      <div>
-        <div class="preset-category-title">${esc(cat)}</div>
-        <div class="preset-items">
-          ${items.map(item => {
-            const added = existing.has(item.name);
-            return `<button type="button"
-              class="preset-chip ${added ? "preset-chip-added" : ""}"
-              data-name="${esc(item.name)}"
-              ${added ? "disabled" : ""}>
-              ${added ? "✓ " : ""}${esc(item.name)}
-            </button>`;
-          }).join("")}
-        </div>
-      </div>`).join("");
+let precBatchPollTimer = null;
 
-    presetList.querySelectorAll(".preset-chip:not(.preset-chip-added)").forEach(chip =>
-      chip.addEventListener("click", () => {
-        const name = chip.dataset.name;
-        if (presetSelectedNames.has(name)) {
-          presetSelectedNames.delete(name);
-          chip.classList.remove("preset-chip-selected");
-        } else {
-          presetSelectedNames.add(name);
-          chip.classList.add("preset-chip-selected");
-        }
-        updatePresetCount();
-      }));
-
-    updatePresetCount();
-    const sw = window.innerWidth - document.documentElement.clientWidth;
-    document.body.style.overflow = "hidden";
-    document.body.style.paddingRight = `${sw}px`;
-    presetModal.style.display = "flex";
-  } catch (e) {
-    alert("추천 법령 목록을 불러오지 못했습니다.");
-  }
-}
-
-function closePresetModal() {
-  presetModal.style.display = "none";
-  document.body.style.overflow = "";
-  document.body.style.paddingRight = "";
-  presetSelectedNames.clear();
-}
-
-presetLawBtn.addEventListener("click", openPresetModal);
-presetModalClose.addEventListener("click", closePresetModal);
-presetCancel.addEventListener("click", closePresetModal);
-presetModal.addEventListener("click", e => { if (e.target === presetModal) closePresetModal(); });
-
-presetAdd.addEventListener("click", async () => {
-  if (!presetSelectedNames.size) { alert("선택된 법령이 없습니다."); return; }
-  const interval = presetInterval.value;
-  const day      = interval !== "daily" ? presetSelectedDay : null;
-  const time     = `${presetHour.value}:${presetMinute.value}`;
-
-  presetAdd.disabled = true;
-  let success = 0;
-  for (const name of presetSelectedNames) {
+function startPrecBatchPolling() {
+  stopPrecBatchPolling();
+  precBatchPollTimer = setInterval(async () => {
     try {
-      const res = await fetch("/api/scheduler/laws", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, interval, day, time }),
-      });
-      if (res.ok) success++;
+      const res = await fetch("/api/batch/prec/status");
+      const data = await res.json();
+      if (!data.running) {
+        stopPrecBatchPolling();
+        const btn = document.getElementById("runPrecBatchNowBtn");
+        const cancelBtn = document.getElementById("cancelPrecBatchBtn");
+        const statusEl = document.getElementById("precBatchRunStatus");
+        if (btn) { btn.disabled = false; btn.textContent = "지금 실행"; }
+        if (cancelBtn) cancelBtn.style.display = "none";
+        if (statusEl) { statusEl.textContent = "배치 완료"; statusEl.className = "batch-run-status done"; }
+        await loadPrecBatchConfig();
+        await loadPrecBatchLogs();
+      } else {
+        await loadPrecBatchConfig();
+      }
     } catch {}
+  }, 10000);
+}
+
+function stopPrecBatchPolling() {
+  if (precBatchPollTimer) { clearInterval(precBatchPollTimer); precBatchPollTimer = null; }
+}
+
+document.getElementById("runPrecBatchNowBtn")?.addEventListener("click", async () => {
+  if (!confirm("지금 바로 판례 수집 배치를 실행하시겠습니까? 백그라운드에서 실행됩니다.")) return;
+  const btn = document.getElementById("runPrecBatchNowBtn");
+  const cancelBtn = document.getElementById("cancelPrecBatchBtn");
+  const statusEl = document.getElementById("precBatchRunStatus");
+  try {
+    const res  = await fetch("/api/batch/prec/run", { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "실행 오류");
+    btn.disabled = true; btn.textContent = "실행중...";
+    if (cancelBtn) cancelBtn.style.display = "inline-flex";
+    if (statusEl) { statusEl.style.display = "block"; statusEl.textContent = "백그라운드에서 실행 중입니다."; statusEl.className = "batch-run-status running"; }
+    startPrecBatchPolling();
+  } catch (e) {
+    if (statusEl) { statusEl.style.display = "block"; statusEl.textContent = `실패: ${e.message}`; statusEl.className = "batch-run-status error"; }
   }
-  presetAdd.disabled = false;
-  closePresetModal();
-  await loadLaws();
-  if (success) alert(`${success}개 법령이 추가되었습니다.`);
 });
 
-/* ── 수집 이력 ── */
-let allLogs = [], logPage = 1;
-
-async function loadLogs() {
+document.getElementById("cancelPrecBatchBtn")?.addEventListener("click", async () => {
   try {
-    const res  = await fetch("/api/scheduler/logs");
+    await fetch("/api/batch/prec/cancel", { method: "POST" });
+    const statusEl = document.getElementById("precBatchRunStatus");
+    if (statusEl) { statusEl.textContent = "중지 요청됨 — 현재 배치 완료 후 중단됩니다."; statusEl.className = "batch-run-status error"; }
+  } catch (e) { alert(`중지 실패: ${e.message}`); }
+});
+
+async function loadPrecBatchLogs() {
+  const el = document.getElementById("precBatchLogList");
+  if (!el) return;
+  try {
+    const data = await (await fetch("/api/batch/prec/logs")).json();
+    allPrecBatchLogs = data.logs || [];
+    precBatchLogPage = 1;
+    renderPrecBatchLogPage();
+  } catch (e) { el.innerHTML = `<div class="empty-msg">불러오기 실패: ${esc(e.message)}</div>`; }
+}
+
+function renderPrecBatchLogPage() {
+  const start = (precBatchLogPage - 1) * LOG_PAGE_SIZE;
+  renderBatchLogList("precBatchLogList", allPrecBatchLogs.slice(start, start + LOG_PAGE_SIZE));
+  renderBatchPagination("precBatchLogPagination", allPrecBatchLogs.length, precBatchLogPage, LOG_PAGE_SIZE, p => {
+    precBatchLogPage = p; renderPrecBatchLogPage();
+  });
+}
+
+document.getElementById("refreshPrecBatchLogsBtn")?.addEventListener("click", loadPrecBatchLogs);
+
+document.getElementById("hardDeleteBtn")?.addEventListener("click", async () => {
+  const input = document.getElementById("hardDeleteInput");
+  const resultEl = document.getElementById("hardDeleteResult");
+  const id = input?.value.trim();
+  if (!id) return;
+  if (!confirm(`Datasource "${id}"를 영구 삭제합니다.\n벡터 데이터 포함 복구 불가능합니다. 계속하시겠습니까?`)) return;
+  resultEl.style.display = "block";
+  resultEl.textContent = "삭제 중...";
+  resultEl.className = "batch-run-status running";
+  try {
+    const res = await fetch(`/api/knowledge/hard-delete/${encodeURIComponent(id)}`, { method: "DELETE" });
     const data = await res.json();
-    allLogs = data.logs || [];
-    logPage = 1;
-    renderLogPage();
+    if (!res.ok) throw new Error(data.detail || "삭제 실패");
+    resultEl.textContent = `삭제 완료: ${id}`;
+    resultEl.className = "batch-run-status done";
+    input.value = "";
   } catch (e) {
-    logList.innerHTML = `<div class="empty-msg">불러오기 실패: ${esc(e.message)}</div>`;
+    resultEl.textContent = `실패: ${e.message}`;
+    resultEl.className = "batch-run-status error";
   }
-}
+});
 
-function renderLogPage() {
-  const start = (logPage - 1) * LOG_PAGE_SIZE;
-  renderLogList(allLogs.slice(start, start + LOG_PAGE_SIZE));
-  renderPagination(
-    document.getElementById("logPagination"),
-    allLogs.length, logPage, LOG_PAGE_SIZE,
-    p => { logPage = p; renderLogPage(); }
-  );
-}
-
-function renderLogList(logs) {
+/* --- 공통 로그 렌더러 --- */
+function renderBatchLogList(listId, logs) {
+  const el = document.getElementById(listId);
+  if (!el) return;
   if (!logs.length) {
-    logList.innerHTML = '<div class="empty-msg">수집 이력이 없습니다.</div>';
+    el.innerHTML = '<div class="empty-msg">배치 실행 이력이 없습니다.</div>';
     return;
   }
-  logList.innerHTML = logs.map(log => {
-    const status = log.status || "idle";
-    const badge  = `<span class="status-badge status-${esc(status)}">${esc(STATUS_LABEL[status] || status)}</span>`;
-    const time   = log.started_at ? log.started_at.replace("T", " ") : "-";
-    const count  = log.count != null ? `<span class="log-count">${log.count}건</span>` : "";
+  el.innerHTML = logs.map(log => {
+    const errors  = log.errors || 0;
+    const cls     = errors > 0 ? "status-failed" : "status-success";
+    const label   = errors > 0 ? "오류있음" : "완료";
+    const elapsed = log.elapsed_sec != null ? `${log.elapsed_sec}초` : "";
+    const allResults   = log.results || [];
+    const errorItems   = allResults.filter(r => r.status === "error");
+    const changedItems = allResults.filter(r => r.status !== "error" && r.status !== "비활성" && r.message !== "변동없음");
+    const errorDetail  = errorItems.map(r =>
+      `<span class="batch-log-result-item batch-log-err">⚠ ${esc(r.name)}: ${esc(r.message || r.status)}</span>`
+    ).join("");
+    const changedDetail = changedItems.slice(0, 5).map(r =>
+      `<span class="batch-log-result-item batch-log-ok">${esc(r.name)}: ${esc(r.message || r.status)}</span>`
+    ).join("");
+    const more   = changedItems.length > 5 ? `<span class="batch-log-more">수집 완료 외 ${changedItems.length - 5}건</span>` : "";
+    const detail = errorDetail + changedDetail;
     return `
       <div class="log-item">
         <div class="log-item-header">
-          ${badge}
-          <span class="log-law-name">${esc(log.law_name || "-")}</span>
-          ${count}
-          <span class="log-time">${esc(time)}</span>
+          <span class="status-badge ${cls}">${label}</span>
+          <span class="log-time">${esc(log.started_at || "-")}</span>
+          <span class="log-count">전체 ${log.total}건 &middot; 변동 ${log.changed}건 &middot; 오류 ${errors}건</span>
+          ${elapsed ? `<span class="log-elapsed">${esc(elapsed)}</span>` : ""}
         </div>
-        ${log.message ? `<div class="log-message">${esc(log.message)}</div>` : ""}
+        ${detail || more ? `<div class="batch-log-results">${detail}${more}</div>` : ""}
       </div>`;
   }).join("");
 }
 
-refreshLogsBtn.addEventListener("click", loadLogs);
-
-loadLaws();
-loadLogs();
 loadNotifications();
+
+/* ════════════════════════════════
+   RAG 테스트 탭
+   ════════════════════════════════ */
+
+let ragtestLaws = [];
+let ragtestLawPage = 1;
+
+async function loadRagtestLaws() {
+  const listEl = document.getElementById("ragtestLawList");
+  if (!listEl) return;
+  listEl.innerHTML = '<div class="empty-msg"><span class="spinner"></span> 불러오는 중...</div>';
+  try {
+    const res  = await fetch("/api/test/laws");
+    const data = await res.json();
+    ragtestLaws = data.laws || [];
+    ragtestLawPage = 1;
+    renderRagtestLawPage();
+  } catch {
+    listEl.innerHTML = '<div class="empty-msg state-msg error">불러오기 실패</div>';
+  }
+}
+
+function renderRagtestLawPage() {
+  const listEl = document.getElementById("ragtestLawList");
+  if (!listEl) return;
+  if (!ragtestLaws.length) {
+    listEl.innerHTML = '<div class="empty-msg">수집 관리 탭에서 법령을 먼저 추가하세요.</div>';
+    renderBatchPagination("ragtestLawPagination", 0, 1, PAGE_SIZE, () => {});
+    return;
+  }
+  const start = (ragtestLawPage - 1) * PAGE_SIZE;
+  const page  = ragtestLaws.slice(start, start + PAGE_SIZE);
+  listEl.innerHTML = page.map(name => `
+    <div class="law-card">
+      <div class="law-card-top">
+        <span class="law-card-name">${esc(name)}</span>
+      </div>
+      <div class="law-card-actions">
+        <button class="btn-secondary ragtest-collect-btn" data-law="${esc(name)}" data-type="law">법령 수집</button>
+        <button class="btn-secondary ragtest-collect-btn" data-law="${esc(name)}" data-type="prec">판례 수집</button>
+      </div>
+    </div>
+  `).join("");
+  listEl.querySelectorAll(".ragtest-collect-btn").forEach(btn => {
+    btn.addEventListener("click", () => ragtestCollect(btn.dataset.law, btn.dataset.type));
+  });
+  renderBatchPagination("ragtestLawPagination", ragtestLaws.length, ragtestLawPage, PAGE_SIZE, p => {
+    ragtestLawPage = p; renderRagtestLawPage();
+  });
+}
+
+function ragtestAppendLog(message, status) {
+  const logEl = document.getElementById("ragtestLog");
+  if (!logEl) return;
+  const line = document.createElement("div");
+  line.className = "ragtest-log-line";
+  line.innerHTML = `<span class="ragtest-log-dot ${esc(status || "start")}"></span><span>${esc(message)}</span>`;
+  logEl.appendChild(line);
+  logEl.parentElement.scrollTop = logEl.parentElement.scrollHeight;
+}
+
+async function ragtestCollect(lawName, type) {
+  const escapedName = CSS.escape(lawName);
+  const btns = document.querySelectorAll(`.ragtest-collect-btn[data-law="${escapedName}"]`);
+  btns.forEach(b => { b.disabled = true; });
+  const logEl = document.getElementById("ragtestLog");
+  if (logEl) {
+    const sep = document.createElement("div");
+    sep.className = "ragtest-log-sep";
+    sep.textContent = `── ${lawName} ${type === "law" ? "법령" : "판례"} 수집`;
+    logEl.appendChild(sep);
+  }
+  try {
+    const res = await fetch(`/api/test/collect/${type}`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({law_name: lawName}),
+    });
+    const reader  = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, {stream: true});
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const raw = line.slice(6).trim();
+        if (raw === "[DONE]") break;
+        try { const msg = JSON.parse(raw); ragtestAppendLog(msg.message, msg.status); } catch {}
+      }
+    }
+  } catch (e) {
+    ragtestAppendLog(`연결 오류: ${e.message}`, "error");
+  } finally {
+    btns.forEach(b => { b.disabled = false; });
+  }
+}
+
+document.getElementById("ragtestRefreshBtn")?.addEventListener("click", loadRagtestLaws);
+document.getElementById("ragtestClearLogBtn")?.addEventListener("click", () => {
+  const logEl = document.getElementById("ragtestLog");
+  if (logEl) logEl.innerHTML = "";
+});
+
+const ragtestChatEl  = document.getElementById("ragtestChat");
+const ragtestWelcome = document.getElementById("ragtestWelcome");
+const ragtestForm    = document.getElementById("ragtestForm");
+const ragtestInput   = document.getElementById("ragtestInput");
+const ragtestBtn     = document.getElementById("ragtestBtn");
+let ragtestBusy = false;
+const rtSendIcon = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg>`;
+
+function ragtestAppendMsg(role, text, loading = false) {
+  if (ragtestWelcome && ragtestWelcome.parentElement) ragtestWelcome.remove();
+  const wrap   = document.createElement("div");
+  wrap.className = `message ${role}`;
+  const label  = document.createElement("div");
+  label.className = "message-label";
+  label.textContent = role === "user" ? "나" : "AI";
+  const bubble = document.createElement("div");
+  bubble.className = `bubble${loading ? " loading" : ""}`;
+  bubble.textContent = text;
+  wrap.append(label, bubble);
+  ragtestChatEl.appendChild(wrap);
+  ragtestChatEl.scrollTop = ragtestChatEl.scrollHeight;
+  return bubble;
+}
+
+async function ragtestSend(message) {
+  message = message.trim();
+  if (!message || ragtestBusy) return;
+  ragtestInput.value = "";
+  ragtestInput.style.height = "auto";
+  ragtestBusy = true;
+  ragtestBtn.disabled = true;
+  ragtestInput.disabled = true;
+  ragtestBtn.innerHTML = '<div class="chat-btn-spinner"></div>';
+  ragtestAppendMsg("user", message);
+  const bubble = ragtestAppendMsg("assistant", "", true);
+  bubble.innerHTML = '<span class="typing-dots"><span></span><span></span><span></span></span>';
+  try {
+    const res = await fetch("/api/test/chat/stream", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({message}),
+    });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      throw new Error(d.detail || "스트리밍 오류");
+    }
+    bubble.classList.remove("loading");
+    bubble.textContent = "";
+    const reader  = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, {stream: true});
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const raw = line.slice(6).trim();
+        if (raw === "[DONE]") break;
+        try {
+          const data = JSON.parse(raw);
+          if (data.error) throw new Error(data.error);
+          if (data.token) { bubble.textContent += data.token; ragtestChatEl.scrollTop = ragtestChatEl.scrollHeight; }
+        } catch (e) { if (e.message && e.message !== "Unexpected end of JSON input") throw e; }
+      }
+    }
+    linkifyCaseNums(bubble);
+    linkifyLawNames(bubble);
+  } catch (e) {
+    bubble.classList.remove("loading");
+    bubble.closest(".message").classList.add("error");
+    bubble.textContent = e.message || "요청 중 오류가 발생했습니다.";
+  } finally {
+    ragtestBusy = false;
+    ragtestBtn.disabled = false;
+    ragtestBtn.innerHTML = rtSendIcon;
+    ragtestInput.disabled = false;
+    ragtestInput.focus();
+  }
+}
+
+ragtestForm?.addEventListener("submit", e => { e.preventDefault(); ragtestSend(ragtestInput.value); });
+ragtestInput?.addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ragtestSend(ragtestInput.value); }
+});
+ragtestInput?.addEventListener("input", () => {
+  ragtestInput.style.height = "auto";
+  ragtestInput.style.height = Math.min(ragtestInput.scrollHeight, 160) + "px";
+});
+
+ragtestChatEl?.addEventListener("click", async e => {
+  const precBtn = e.target.closest(".prec-link");
+  if (precBtn && !precBtn.disabled) {
+    const caseNo  = precBtn.dataset.no;
+    const origTxt = precBtn.textContent;
+    precBtn.disabled  = true;
+    precBtn.textContent = "검색 중…";
+    try {
+      const res  = await fetch(`/api/prec/search?q=${encodeURIComponent(caseNo)}&display=3`);
+      const data = await res.json();
+      const prec = (data.precs || []).find(p => (p["사건번호"] || "").includes(caseNo)) || (data.precs || [])[0];
+      if (!prec) { alert(`"${caseNo}" 판례를 찾을 수 없습니다.`); return; }
+      openDetailPage("prec", prec["판례정보일련번호"] || prec["판례일련번호"], prec["사건명"] || caseNo);
+    } catch {
+      alert("판례 조회 중 오류가 발생했습니다.");
+    } finally {
+      precBtn.disabled  = false;
+      precBtn.textContent = origTxt;
+    }
+    return;
+  }
+
+  const lawBtn = e.target.closest(".law-ref-link");
+  if (lawBtn && !lawBtn.disabled) {
+    const lawName = lawBtn.dataset.lawName;
+    const origTxt = lawBtn.textContent;
+    lawBtn.disabled = true;
+    lawBtn.textContent = "검색 중…";
+    try {
+      const res  = await fetch(`/api/law/search?q=${encodeURIComponent(lawName)}&display=5`);
+      const data = await res.json();
+      const laws = data.laws || [];
+      const law  = laws.find(l => l["법령명한글"] === lawName) || laws[0];
+      if (!law) { alert(`"${lawName}" 법령을 찾을 수 없습니다.`); return; }
+      openDetailPage("law", String(law["법령ID"]), law["법령명한글"] || lawName);
+    } catch {
+      alert("법령 조회 중 오류가 발생했습니다.");
+    } finally {
+      lawBtn.disabled = false;
+      lawBtn.textContent = origTxt;
+    }
+  }
+});
 
 /* ════════════════════════════════
    법률판례질의 탭
@@ -1848,3 +2104,389 @@ function esc(str) {
     .replace(/&/g, "&amp;").replace(/</g, "&lt;")
     .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
+
+/* ════════════════════════════════
+   판례 분석 탭
+   ════════════════════════════════ */
+const analysisForm      = document.getElementById("analysisForm");
+const analysisInput     = document.getElementById("analysisInput");
+const analysisBtn       = document.getElementById("analysisBtn");
+const analysisResult    = document.getElementById("analysisResult");
+const analysisAiText    = document.getElementById("analysisAiText");
+const analysisPrecBlock = document.getElementById("analysisPrecBlock");
+const analysisPrecCards = document.getElementById("analysisPrecCards");
+
+let analysisBusy = false;
+
+async function runAnalysis(question) {
+  if (!question.trim() || analysisBusy) return;
+  analysisBusy = true;
+  analysisBtn.disabled = true;
+  analysisBtn.textContent = "분석 중...";
+
+  analysisResult.style.display = "none";
+  analysisAiText.textContent = "";
+  analysisPrecCards.innerHTML = "";
+
+  try {
+    analysisPrecCards.innerHTML = '<div class="state-msg"><span class="spinner"></span>판례 검색 중...</div>';
+    analysisResult.style.display = "block";
+
+    // 에이전트 스트리밍 호출
+    const res = await fetch("/api/lawprec/chat/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: question }),
+    });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      throw new Error(d.detail || "에이전트 오류");
+    }
+
+    analysisAiText.textContent = "";
+    const reader  = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    outer: while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split("\n");
+      buf = lines.pop() || "";
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const payload = line.slice(6).trim();
+        if (payload === "[DONE]") break outer;
+        try {
+          const d = JSON.parse(payload);
+          if (d.error) throw new Error(d.error);
+          if (d.token) analysisAiText.textContent += d.token;
+        } catch (e) {
+          if (e.message !== "Unexpected end of JSON input") throw e;
+        }
+      }
+    }
+
+    // JSON 파싱: [{case_no, prec_id}, ...]
+    let precList = [];
+    try {
+      const raw = analysisAiText.textContent.trim();
+      const jsonStr = raw.slice(raw.indexOf("["), raw.lastIndexOf("]") + 1);
+      precList = JSON.parse(jsonStr);
+    } catch { precList = []; }
+
+    // prec_id 기준 중복 제거
+    const seen = new Set();
+    precList = precList.filter(item => {
+      const id = item.prec_id || item.case_no || "";
+      if (!id || seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+
+    if (precList.length === 0) {
+      analysisPrecCards.innerHTML = '<div class="state-msg">AI 응답에서 사건번호를 찾을 수 없습니다.</div>';
+    } else {
+      analysisPrecCards.innerHTML = `<div class="state-msg"><span class="spinner"></span>판례 ${precList.length}건 조회 중...</div>`;
+
+      const cards = (await Promise.all(
+        precList.map(async item => {
+          const precId = item.prec_id || item.case_no;
+          if (!precId) return null;
+          try {
+            const dr     = await fetch(`/api/prec/${encodeURIComponent(precId)}`);
+            const detail = await dr.json();
+            // meta는 detail에서 조합
+            const meta = {
+              "사건번호": detail.case_no || item.case_no || "",
+              "사건명":   detail.case_name || "",
+              "법원명":   detail.court || "",
+              "선고일자": detail.date || "",
+              "판례정보일련번호": precId,
+            };
+            return { meta, detail };
+          } catch { return null; }
+        })
+      )).filter(Boolean);
+
+      analysisPrecCards.innerHTML = "";
+      cards.forEach(({ meta, detail }, idx) =>
+        analysisPrecCards.appendChild(buildAnalysisPrecCard(meta, detail, idx + 1))
+      );
+    }
+
+  } catch (err) {
+    analysisPrecCards.innerHTML = `<div class="state-msg">${err.message || "오류가 발생했습니다."}</div>`;
+  } finally {
+    analysisBusy = false;
+    analysisBtn.disabled = false;
+    analysisBtn.textContent = "분석";
+  }
+}
+
+function buildAnalysisPrecCard(meta, detail, index) {
+  const card    = document.createElement("div");
+  card.className = "analysis-prec-card";
+
+  const caseNo   = meta["사건번호"] || "";
+  const caseName = detail.case_name || meta["사건명"] || caseNo;
+  const court    = meta["법원명"] || "";
+  const date     = String(meta["선고일자"] || "");
+  const rawSummary = detail.summary ? stripHtml(detail.summary) : "";
+  const summary  = rawSummary.length > 220 ? rawSummary.slice(0, 220) + "…" : rawSummary;
+
+  let refHtml = "";
+  if (detail.ref_articles) {
+    const citations = extractCitations(detail.ref_articles);
+    if (citations.length) {
+      refHtml = `<div class="analysis-prec-refs">
+        <div class="analysis-prec-refs-label">참조조문</div>
+        <div class="law-links">${citations.map(c =>
+          `<button class="law-link-btn" data-law="${esc(c.lawName)}" data-jo="${c.joNum}" data-jo-sub="${c.joSub}" data-ho="${(c.hoNums||[]).join(",")}">${esc(c.lawName)} ${esc(c.joText)}</button>`
+        ).join("")}</div>
+      </div>`;
+    }
+  }
+
+  card.innerHTML = `
+    <div class="analysis-prec-card-header">
+      ${court ? `<span class="analysis-prec-court">${esc(court)}</span>` : ""}
+      ${date  ? `<span class="analysis-prec-date">${esc(date)}</span>` : ""}
+    </div>
+    <div class="analysis-prec-card-body">
+      <div class="analysis-prec-caseno">${index != null ? `<span class="analysis-prec-index">${index}</span>` : ""}${esc(caseNo)}</div>
+      <div class="analysis-prec-name">${esc(caseName)}</div>
+      ${summary ? `<div class="analysis-prec-summary">${esc(summary)}</div>` : ""}
+    </div>
+    ${refHtml}
+    <div class="analysis-prec-card-footer">
+      <button class="analysis-prec-detail-btn">전체 보기</button>
+    </div>`;
+
+  card.querySelectorAll(".law-link-btn").forEach(btn => {
+    btn.addEventListener("click", e => {
+      e.stopPropagation();
+      openArticlePanel(btn.dataset.law, Number(btn.dataset.jo), Number(btn.dataset.joSub), btn.dataset.ho);
+    });
+  });
+
+  const precId = meta["판례정보일련번호"] || meta["판례일련번호"];
+  card.querySelector(".analysis-prec-detail-btn").addEventListener("click", () => {
+    closePanel();
+    openDetailPage("prec", precId, caseName);
+  });
+
+  return card;
+}
+
+analysisForm.addEventListener("submit", e => {
+  e.preventDefault();
+  runAnalysis(analysisInput.value);
+});
+
+analysisInput.addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); runAnalysis(analysisInput.value); }
+});
+
+analysisInput.addEventListener("input", () => {
+  analysisInput.style.height = "auto";
+  analysisInput.style.height = Math.min(analysisInput.scrollHeight, 200) + "px";
+});
+
+document.querySelectorAll(".analysis-chip").forEach(chip => {
+  chip.addEventListener("click", () => {
+    analysisInput.value = chip.dataset.msg;
+    analysisInput.style.height = "auto";
+    analysisInput.style.height = Math.min(analysisInput.scrollHeight, 200) + "px";
+    runAnalysis(chip.dataset.msg);
+  });
+});
+
+
+/* ════════════════════════════════
+   키워드 검색 테스트 탭
+   ════════════════════════════════ */
+const keywordForm      = document.getElementById("keywordForm");
+const keywordInput     = document.getElementById("keywordInput");
+const keywordBtn       = document.getElementById("keywordBtn");
+const keywordExtracted = document.getElementById("keywordExtracted");
+const keywordTags      = document.getElementById("keywordTags");
+const keywordResult    = document.getElementById("keywordResult");
+const keywordPrecCards = document.getElementById("keywordPrecCards");
+
+let keywordBusy = false;
+let keywordAllCards = [];
+let keywordPage = 1;
+const KEYWORD_PAGE_SIZE = 5;
+
+async function runKeywordSearch(question) {
+  if (!question.trim() || keywordBusy) return;
+  keywordBusy = true;
+  keywordBtn.disabled = true;
+  keywordBtn.textContent = "추출 중...";
+
+  keywordExtracted.style.display = "none";
+  keywordTags.innerHTML = "";
+  keywordResult.style.display = "none";
+  keywordPrecCards.innerHTML = "";
+
+  try {
+    // 1단계: 키워드 추출 (invoke)
+    const res = await fetch("/api/keyword/extract", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: question }),
+    });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      throw new Error(d.detail || "키워드 추출 오류");
+    }
+    const resData = await res.json();
+
+    let extracted = {};
+    try {
+      const raw = (resData.content || "").trim();
+      const jsonStr = raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1);
+      extracted = JSON.parse(jsonStr);
+    } catch { throw new Error("키워드 추출 결과를 파싱할 수 없습니다."); }
+
+    const topic   = extracted.topic || "";
+    const hypo    = extracted.hypothesis || "";
+    let queries = extracted.queries || [];
+
+    // 키워드 태그 표시
+    keywordTags.innerHTML =
+      (topic ? `<span class="keyword-tag"><span class="keyword-tag-label">T</span>${esc(topic)}</span>` : "") +
+      (hypo  ? `<span class="keyword-tag"><span class="keyword-tag-label">H</span>${esc(hypo)}</span>` : "") +
+      queries.map(q => `<span class="keyword-tag"><span class="keyword-tag-label">Q</span>${esc(q)}</span>`).join("");
+    keywordExtracted.style.display = "flex";
+
+    // 조사·시점 표현 제거
+    const NOISE = /\s*(전|후|시|중|때|의|에|을|를|이|가|은|는|로|과|와|및)\s*/g;
+    queries = queries.map(q => q.replace(NOISE, " ").trim()).filter(q => q.length >= 2);
+
+    if (queries.length === 0) {
+      keywordResult.style.display = "block";
+      keywordPrecCards.innerHTML = '<div class="state-msg">추출된 검색어가 없습니다.</div>';
+      return;
+    }
+
+    // 2단계: hypothesis 본문 검색 + queries 판례명 검색 (병렬)
+    keywordBtn.textContent = "검색 중...";
+    keywordResult.style.display = "block";
+    keywordPrecCards.innerHTML = '<div class="state-msg"><span class="spinner"></span>판례 검색 중...</div>';
+
+    const searchPromises = [];
+    // 원본 질문 → 본문 검색 (search=2)
+    searchPromises.push(
+      fetch(`/api/prec/search?q=${encodeURIComponent(question)}&display=15&search=2`)
+        .then(r => r.ok ? r.json() : { precs: [] })
+        .then(d => d.precs || [])
+        .catch(() => [])
+    );
+    // hypothesis → 본문 검색 (search=2)
+    if (hypo && hypo !== question) {
+      searchPromises.push(
+        fetch(`/api/prec/search?q=${encodeURIComponent(hypo)}&display=15&search=2`)
+          .then(r => r.ok ? r.json() : { precs: [] })
+          .then(d => d.precs || [])
+          .catch(() => [])
+      );
+    }
+    // topic + queries 중복 제거 후 판례명 검색 (search=1)
+    const searchTerms = [...new Set([topic, ...queries].filter(Boolean))];
+    for (const q of searchTerms) {
+      searchPromises.push(
+        fetch(`/api/prec/search?q=${encodeURIComponent(q)}&display=15`)
+          .then(r => r.ok ? r.json() : { precs: [] })
+          .then(d => d.precs || [])
+          .catch(() => [])
+      );
+    }
+    const searchResults = await Promise.all(searchPromises);
+
+    // 합산 + 중복 제거 (판례ID 없는 항목 제외)
+    const seen = new Set();
+    const allPrecs = [];
+    for (const precs of searchResults) {
+      for (const p of precs) {
+        const pid = String(p["판례정보일련번호"] || p["판례일련번호"] || p["판례ID"] || "");
+        if (pid && pid !== "undefined" && pid !== "null" && !seen.has(pid)) {
+          seen.add(pid);
+          allPrecs.push(p);
+        }
+      }
+    }
+
+    if (allPrecs.length === 0) {
+      keywordPrecCards.innerHTML = '<div class="state-msg">검색 결과가 없습니다.</div>';
+      return;
+    }
+
+    // 3단계: 상세 조회
+    keywordPrecCards.innerHTML = `<div class="state-msg"><span class="spinner"></span>판례 ${allPrecs.length}건 상세 조회 중...</div>`;
+
+    const cards = (await Promise.all(
+      allPrecs.map(async meta => {
+        let precId = meta["판례정보일련번호"] || meta["판례일련번호"] || meta["판례ID"];
+        try {
+          // precId 없으면 사건번호로 재검색
+          if (!precId) {
+            const caseNo = meta["사건번호"] || meta["사건명"] || "";
+            if (!caseNo) return null;
+            const sr = await fetch(`/api/prec/search?q=${encodeURIComponent(caseNo)}&display=3`);
+            const sd = await sr.json();
+            const found = (sd.precs || []).find(p => (p["사건번호"] || "").includes(caseNo)) || sd.precs?.[0];
+            if (!found) return null;
+            precId = found["판례정보일련번호"] || found["판례일련번호"];
+            if (!precId) return null;
+            Object.assign(meta, found);
+          }
+          const dr     = await fetch(`/api/prec/${encodeURIComponent(precId)}`);
+          const detail = await dr.json();
+          return { meta, detail };
+        } catch { return null; }
+      })
+    )).filter(Boolean);
+
+    keywordAllCards = cards;
+    keywordPage = 1;
+    renderKeywordPage();
+
+  } catch (err) {
+    keywordResult.style.display = "block";
+    keywordPrecCards.innerHTML = `<div class="state-msg">${esc(err.message || "오류가 발생했습니다.")}</div>`;
+  } finally {
+    keywordBusy = false;
+    keywordBtn.disabled = false;
+    keywordBtn.textContent = "검색";
+  }
+}
+
+function renderKeywordPage() {
+  const start = (keywordPage - 1) * KEYWORD_PAGE_SIZE;
+  const page  = keywordAllCards.slice(start, start + KEYWORD_PAGE_SIZE);
+  keywordPrecCards.innerHTML = "";
+  page.forEach(({ meta, detail }, idx) =>
+    keywordPrecCards.appendChild(buildAnalysisPrecCard(meta, detail, start + idx + 1))
+  );
+  renderBatchPagination("keywordPagination", keywordAllCards.length, keywordPage, KEYWORD_PAGE_SIZE, p => {
+    keywordPage = p;
+    renderKeywordPage();
+    keywordPrecCards.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+}
+
+keywordForm.addEventListener("submit", e => {
+  e.preventDefault();
+  runKeywordSearch(keywordInput.value);
+});
+
+keywordInput.addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); runKeywordSearch(keywordInput.value); }
+});
+
+keywordInput.addEventListener("input", () => {
+  keywordInput.style.height = "auto";
+  keywordInput.style.height = Math.min(keywordInput.scrollHeight, 200) + "px";
+});

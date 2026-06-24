@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>법령 서비스</title>
-  <link rel="stylesheet" href="/static/style.css?v=25" />
+  <link rel="stylesheet" href="/static/style.css?v=47" />
 </head>
 <body>
   <div class="app">
@@ -19,15 +19,21 @@
       <button class="tab active" data-tab="search">법령 검색</button>
       <button class="tab" data-tab="prec">판례 검색</button>
       <button class="tab" data-tab="unified">통합 검색</button>
-      <button class="tab" data-tab="chat">법령 상담</button>
-      <button class="tab" data-tab="lawprec">법률판례질의</button>
+      <!-- <button class="tab" data-tab="chat">법령 상담</button>
+      <button class="tab" data-tab="lawprec">법률판례질의</button> -->
+      <button class="tab" data-tab="analysis">판례 분석</button>
+      <button class="tab" data-tab="keyword">키워드 검색</button>
       <button class="tab" data-tab="scheduler">수집 관리</button>
+      <button class="tab" data-tab="ragtest">RAG 테스트</button>
       <button class="tab" data-tab="notifications">알림<span id="notifBadge" class="tab-badge" style="display:none"></span></button>
       <a href="/pharma" class="tab tab-external">💊 Pharma</a>
     </nav>
 
     <!-- 법령 검색 탭 -->
     <div id="tab-search" class="tab-panel active">
+      <div class="tab-info">
+        <span><strong>국가법령정보센터 Open API</strong> — 법령명 또는 조문 내용으로 현행 법령을 검색합니다. 조문을 클릭하면 상세 내용을 확인할 수 있습니다.</span>
+      </div>
       <div class="search-section">
         <form id="searchForm" class="search-form">
           <input
@@ -60,6 +66,9 @@
 
     <!-- 판례 검색 탭 -->
     <div id="tab-prec" class="tab-panel">
+      <div class="tab-info">
+        <span><strong>국가법령정보센터 Open API</strong> — 키워드로 대법원·헌법재판소 판례를 검색합니다. 판례를 클릭하면 사건명·요지·판결 내용을 확인할 수 있습니다.</span>
+      </div>
       <div class="search-section">
         <form id="precForm" class="search-form">
           <input
@@ -88,6 +97,9 @@
 
     <!-- 법령 상담 탭 -->
     <div id="tab-chat" class="tab-panel chat-panel">
+      <div class="tab-info">
+        <span><strong>law 에이전트 (RAG)</strong> — 수집 관리에서 업로드한 법령·판례 데이터를 Knowledge API에서 검색해 답변합니다. 수집된 데이터가 많을수록 답변 품질이 높아집니다.</span>
+      </div>
       <div class="chat" id="chat" aria-live="polite">
         <div class="welcome" id="welcome">
           <p>조문·판례·법령 해석 등 궁금한 것을 물어보세요.</p>
@@ -118,6 +130,9 @@
 
     <!-- 법률판례질의 탭 -->
     <div id="tab-lawprec" class="tab-panel chat-panel">
+      <div class="tab-info">
+        <span><strong>법령판례 에이전트 (법령·판례 특화)</strong> — 법령 검색·판례 검색 API를 실시간으로 호출해 구체적인 법적 질문에 답변합니다. 법령 상담과 달리 사전 수집 없이도 사용 가능합니다.</span>
+      </div>
       <div class="chat" id="lawprecChat" aria-live="polite">
         <div class="welcome" id="lawprecWelcome">
           <p>법률·판례 기반으로 구체적인 법적 질문에 답변합니다.</p>
@@ -146,41 +161,223 @@
       </div>
     </div>
 
+    <!-- 판례 분석 탭 -->
+    <div id="tab-analysis" class="tab-panel">
+      <div class="tab-info">
+        <span><strong>판례 분석 AI</strong> — 법률 상황을 설명하면 관련 판례를 찾아 핵심 쟁점과 참조조문을 정리합니다.</span>
+      </div>
+      <div class="analysis-search-section">
+        <form id="analysisForm" class="analysis-form">
+          <textarea
+            id="analysisInput"
+            rows="3"
+            placeholder="법률 상황을 자세히 설명해주세요. (예: 육아휴직 중 급여 미지급으로 회사와 갈등이 있는데 법적으로 어떻게 해야 하나요?)"
+            autocomplete="off"
+          ></textarea>
+          <button type="submit" id="analysisBtn" class="btn-primary analysis-submit-btn">분석</button>
+        </form>
+        <div class="chips">
+          <button class="chip analysis-chip" data-msg="육아휴직동안 지급하는 급여때문에 회사와 갈등이 있는데 법적으로 어떻게 하는게 맞는지 모르겠어">육아휴직 급여 갈등</button>
+          <button class="chip analysis-chip" data-msg="해고 예고 없이 즉시 해고됐는데 법적으로 어떻게 대응해야 하나요?">부당해고 대응</button>
+          <button class="chip analysis-chip" data-msg="임금이 계속 체불되고 있는데 어떻게 해야 하나요?">임금 체불</button>
+          <button class="chip analysis-chip" data-msg="직장 내 괴롭힘을 당하고 있는데 법적으로 어떤 조치를 취할 수 있나요?">직장 내 괴롭힘</button>
+        </div>
+      </div>
+      <div id="analysisAiText" style="display:none"></div>
+      <div id="analysisResult" class="analysis-result" style="display:none">
+        <div class="analysis-block" id="analysisPrecBlock">
+          <div class="analysis-block-title">관련 판례</div>
+          <div id="analysisPrecCards" class="analysis-prec-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 키워드 검색 탭 -->
+    <div id="tab-keyword" class="tab-panel">
+      <div class="tab-info">
+        <span><strong>키워드 검색 테스트</strong> — 질문에서 법률 키워드를 추출한 뒤, 국가법령정보센터 API로 직접 판례를 검색합니다.</span>
+      </div>
+      <div class="analysis-search-section">
+        <form id="keywordForm" class="analysis-form">
+          <textarea
+            id="keywordInput"
+            rows="3"
+            placeholder="법률 상황을 자세히 설명해주세요. (예: 퇴사 후 회사가 임금을 지급하지 않으면 어떻게 되나요?)"
+            autocomplete="off"
+          ></textarea>
+          <button type="submit" id="keywordBtn" class="btn-primary analysis-submit-btn">검색</button>
+        </form>
+      </div>
+      <div id="keywordExtracted" class="keyword-extracted" style="display:none">
+        <div class="keyword-tags" id="keywordTags"></div>
+      </div>
+      <div id="keywordResult" class="analysis-result" style="display:none">
+        <div class="analysis-block">
+          <div class="analysis-block-title">검색 결과</div>
+          <div id="keywordPrecCards" class="analysis-prec-list"></div>
+          <div id="keywordPagination" class="pagination batch-pagination"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- 수집 관리 탭 -->
     <div id="tab-scheduler" class="tab-panel">
-      <div class="scheduler-section">
+      <!-- 서브탭 네비 -->
+      <div class="batch-sub-nav">
+        <button class="batch-sub-tab active" data-sub="law">법령</button>
+        <button class="batch-sub-tab" data-sub="prec">판례</button>
+      </div>
 
-        <!-- 법령 목록 -->
-        <div class="scheduler-card">
+      <!-- 법령 서브패널 -->
+      <div id="batch-sub-law" class="batch-sub-panel">
+        <div class="batch-toolbar">
+          <div class="batch-toolbar-group">
+            <label class="batch-settings-label">실행 시각</label>
+            <input type="time" id="lawBatchRunTime" class="batch-time-input" value="02:00" />
+            <button class="btn-secondary" id="saveLawBatchTimeBtn">저장</button>
+            <span id="lawBatchTimeSaved" class="batch-saved-msg" style="display:none">저장됨</span>
+          </div>
+          <div class="batch-toolbar-group">
+            <button class="btn-secondary" id="loadLawDefaultsBtn">고용노동부 법령 전체 불러오기</button>
+            <button class="btn-primary" id="runLawBatchNowBtn">지금 실행</button>
+          </div>
+          <div id="lawBatchRunStatus" class="batch-run-status" style="display:none"></div>
+        </div>
+        <div class="scheduler-section">
+          <div class="scheduler-card">
+            <div class="scheduler-card-header">
+              <h2 class="scheduler-card-title">수집 대상 법령 <span id="lawBatchLawCount" class="batch-count-badge"></span></h2>
+              <button class="btn-add" id="addLawBatchLawBtn">+ 직접 추가</button>
+            </div>
+            <div id="addLawBatchLawForm" class="batch-add-form" style="display:none">
+              <input type="text" id="lawBatchLawNameInput" class="batch-law-name-input" placeholder="법령명 입력 (예: 근로기준법)" />
+              <button class="btn-primary" id="confirmAddLawBatchLawBtn">추가</button>
+              <button class="btn-secondary" id="cancelAddLawBatchLawBtn">취소</button>
+            </div>
+            <div class="scheduler-table-wrap">
+              <div id="lawBatchLawList" class="law-list"></div>
+            </div>
+            <div id="lawBatchLawPagination" class="pagination batch-pagination"></div>
+          </div>
+          <div class="scheduler-card">
+            <div class="scheduler-card-header">
+              <h2 class="scheduler-card-title">실행 이력</h2>
+              <button class="btn-secondary" id="refreshLawBatchLogsBtn">새로고침</button>
+            </div>
+            <div id="lawBatchLogList" class="log-list scheduler-table-wrap">
+              <div class="empty-msg">이력이 없습니다.</div>
+            </div>
+            <div id="lawBatchLogPagination" class="pagination batch-pagination"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 판례 서브패널 -->
+      <div id="batch-sub-prec" class="batch-sub-panel" style="display:none">
+        <div class="batch-toolbar">
+          <div class="batch-toolbar-group">
+            <label class="batch-settings-label">실행 시각</label>
+            <input type="time" id="precBatchRunTime" class="batch-time-input" value="03:00" />
+            <button class="btn-secondary" id="savePrecBatchTimeBtn">저장</button>
+            <span id="precBatchTimeSaved" class="batch-saved-msg" style="display:none">저장됨</span>
+          </div>
+          <div class="batch-toolbar-group">
+            <button class="btn-primary" id="runPrecBatchNowBtn">지금 실행</button>
+            <button class="btn-secondary" id="cancelPrecBatchBtn" style="display:none;color:var(--error)">중지</button>
+          </div>
+          <div class="batch-toolbar-group" style="margin-left:auto">
+            <input type="text" id="hardDeleteInput" class="batch-law-name-input" placeholder="Datasource ID" style="width:260px;font-size:0.78rem" />
+            <button class="btn-secondary" id="hardDeleteBtn" style="color:var(--error)">삭제</button>
+          </div>
+          <div id="precBatchRunStatus" class="batch-run-status" style="display:none"></div>
+          <div id="hardDeleteResult" class="batch-run-status" style="display:none"></div>
+        </div>
+        <div class="scheduler-section">
+          <div class="scheduler-card">
+            <div class="scheduler-card-header">
+              <h2 class="scheduler-card-title">수집 대상 법령 <span id="precBatchLawCount" class="batch-count-badge"></span></h2>
+              <button class="btn-add" id="addPrecBatchLawBtn">+ 직접 추가</button>
+            </div>
+            <div id="addPrecBatchLawForm" class="batch-add-form" style="display:none">
+              <input type="text" id="precBatchLawNameInput" class="batch-law-name-input" placeholder="법령명 입력 (예: 근로기준법)" />
+              <button class="btn-primary" id="confirmAddPrecBatchLawBtn">추가</button>
+              <button class="btn-secondary" id="cancelAddPrecBatchLawBtn">취소</button>
+            </div>
+            <div class="scheduler-table-wrap">
+              <div id="precBatchLawList" class="law-list"></div>
+            </div>
+            <div id="precBatchLawPagination" class="pagination batch-pagination"></div>
+          </div>
+          <div class="scheduler-card">
+            <div class="scheduler-card-header">
+              <h2 class="scheduler-card-title">실행 이력</h2>
+              <button class="btn-secondary" id="refreshPrecBatchLogsBtn">새로고침</button>
+            </div>
+            <div id="precBatchLogList" class="log-list scheduler-table-wrap">
+              <div class="empty-msg">이력이 없습니다.</div>
+            </div>
+            <div id="precBatchLogPagination" class="pagination batch-pagination"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RAG 테스트 탭 -->
+    <div id="tab-ragtest" class="tab-panel">
+      <div class="ragtest-layout">
+        <!-- 왼쪽: 법령 목록 -->
+        <div class="scheduler-card ragtest-laws">
           <div class="scheduler-card-header">
             <h2 class="scheduler-card-title">수집 대상 법령</h2>
-            <div style="display:flex;gap:0.5rem">
-              <button class="btn-secondary" id="presetLawBtn">추천 법령</button>
-              <button class="btn-add" id="addLawBtn">+ 직접 추가</button>
-            </div>
+            <button class="btn-secondary" id="ragtestRefreshBtn">새로고침</button>
           </div>
           <div class="scheduler-table-wrap">
-            <div id="lawList" class="law-list"></div>
+            <div id="ragtestLawList" class="law-list"></div>
           </div>
-          <div id="lawPagination" class="pagination"></div>
+          <div id="ragtestLawPagination" class="pagination batch-pagination"></div>
         </div>
-
-        <!-- 수집 이력 -->
-        <div class="scheduler-card">
-          <div class="scheduler-card-header">
-            <h2 class="scheduler-card-title">수집 이력</h2>
-            <button class="btn-secondary" id="refreshLogsBtn">새로고침</button>
+        <!-- 오른쪽 -->
+        <div class="ragtest-right">
+          <!-- 수집 로그 -->
+          <div class="scheduler-card ragtest-log-card">
+            <div class="scheduler-card-header">
+              <h2 class="scheduler-card-title">수집 로그</h2>
+              <button class="btn-secondary" id="ragtestClearLogBtn">지우기</button>
+            </div>
+            <div class="scheduler-table-wrap">
+              <div id="ragtestLog" class="ragtest-log"></div>
+            </div>
           </div>
-          <div id="logList" class="log-list">
-            <div class="empty-msg">이력이 없습니다.</div>
+          <!-- RAG 채팅 -->
+          <div class="scheduler-card ragtest-chat-card">
+            <div class="scheduler-card-header">
+              <h2 class="scheduler-card-title">RAG 검색 테스트</h2>
+            </div>
+            <div class="chat" id="ragtestChat" aria-live="polite">
+              <div class="welcome" id="ragtestWelcome">
+                <p>수집한 요약본을 기반으로 답변합니다.</p>
+              </div>
+            </div>
+            <div class="composer">
+              <form id="ragtestForm" class="composer-form">
+                <textarea id="ragtestInput" rows="1" placeholder="검색할 내용을 입력하세요..." autocomplete="off"></textarea>
+                <button type="submit" id="ragtestBtn">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 19V5M5 12l7-7 7 7"/>
+                  </svg>
+                </button>
+              </form>
+            </div>
           </div>
-          <div id="logPagination" class="pagination"></div>
         </div>
       </div>
     </div>
 
     <!-- 통합 검색 탭 -->
     <div id="tab-unified" class="tab-panel">
+      <div class="tab-info">
+        <span><strong>국가법령정보센터 Open API</strong> — 하나의 검색어로 법령과 판례를 동시에 검색합니다. 결과를 클릭하면 조문·판결 전문을 확인할 수 있습니다.</span>
+      </div>
       <div class="search-section">
         <form id="unifiedForm" class="search-form">
           <input type="text" id="unifiedInput" placeholder="법령명 또는 키워드를 입력하세요" autocomplete="off" spellcheck="false" />
@@ -196,6 +393,9 @@
 
     <!-- 알림 탭 -->
     <div id="tab-notifications" class="tab-panel">
+      <div class="tab-info">
+        <span><strong>수집 관리 알림</strong> — 법령·판례 자동 수집 결과를 알립니다. 성공 시 업로드된 항목 수, 실패 시 오류 원인을 확인할 수 있습니다.</span>
+      </div>
       <div class="notif-section">
         <div class="notif-toolbar">
           <h2 class="scheduler-card-title">알림</h2>
@@ -228,119 +428,6 @@
     <div class="detail-page-body" id="detailPageBody"></div>
   </div>
 
-  <!-- 추천 법령 모달 -->
-  <div id="presetModal" class="modal-overlay" style="display:none">
-    <div class="modal modal-wide">
-      <div class="modal-header">
-        <h3>인사 관련 추천 법령</h3>
-        <button class="modal-close" id="presetModalClose">✕</button>
-      </div>
-      <div class="modal-body">
-        <p class="modal-hint">수집할 법령을 선택하세요. 이미 추가된 법령은 비활성화됩니다.</p>
-        <div id="presetList" class="preset-list"></div>
-        <div class="preset-schedule-row">
-          <label class="modal-label">기본 수집 주기</label>
-          <div class="preset-schedule-controls">
-            <select id="presetInterval" class="modal-input preset-interval-select">
-              <option value="daily">매일</option>
-              <option value="weekly" selected>매주</option>
-              <option value="monthly">매월</option>
-            </select>
-            <div id="presetWeekdayPicker" class="weekday-picker">
-              <button type="button" class="weekday-btn active" data-day="월">월</button>
-              <button type="button" class="weekday-btn" data-day="화">화</button>
-              <button type="button" class="weekday-btn" data-day="수">수</button>
-              <button type="button" class="weekday-btn" data-day="목">목</button>
-              <button type="button" class="weekday-btn" data-day="금">금</button>
-              <button type="button" class="weekday-btn" data-day="토">토</button>
-              <button type="button" class="weekday-btn" data-day="일">일</button>
-            </div>
-            <select id="presetMonthdayPicker" class="modal-input" style="display:none"></select>
-          </div>
-        </div>
-        <div class="preset-schedule-row">
-          <label class="modal-label">실행 시각</label>
-          <div class="time-picker-row">
-            <select id="presetHour" class="modal-input time-select"></select>
-            <span class="time-sep">:</span>
-            <select id="presetMinute" class="modal-input time-select">
-              <option value="00">00</option>
-              <option value="10">10</option>
-              <option value="20">20</option>
-              <option value="30">30</option>
-              <option value="40">40</option>
-              <option value="50">50</option>
-            </select>
-          </div>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <span id="presetCount" class="preset-count-label"></span>
-        <button class="btn-secondary" id="presetCancel">취소</button>
-        <button class="btn-primary" id="presetAdd">선택 추가</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- 법령 추가/편집 모달 -->
-  <div id="lawModal" class="modal-overlay" style="display:none">
-    <div class="modal">
-      <div class="modal-header">
-        <h3 id="modalTitle">법령 추가</h3>
-        <button class="modal-close" id="modalClose">✕</button>
-      </div>
-      <div class="modal-body">
-        <label class="modal-label">법령명</label>
-        <div class="autocomplete-wrap">
-          <input type="text" id="modalLawName" class="modal-input" placeholder="법령명 검색..." autocomplete="off" />
-          <ul id="lawNameDropdown" class="autocomplete-dropdown" style="display:none"></ul>
-        </div>
-        <label class="modal-label">수집 대상</label>
-        <select id="modalCollectType" class="modal-input">
-          <option value="전체">법령 + 판례</option>
-          <option value="법령">법령만</option>
-          <option value="판례">판례만</option>
-        </select>
-        <label class="modal-label">수집 주기</label>
-        <select id="modalInterval" class="modal-input">
-          <option value="daily">매일</option>
-          <option value="weekly" selected>매주</option>
-          <option value="monthly">매월</option>
-        </select>
-        <div id="daySelector" style="display:none">
-          <label class="modal-label" id="dayLabel">요일 선택</label>
-          <div id="weekdayPicker" class="weekday-picker">
-            <button type="button" class="weekday-btn" data-day="월">월</button>
-            <button type="button" class="weekday-btn" data-day="화">화</button>
-            <button type="button" class="weekday-btn" data-day="수">수</button>
-            <button type="button" class="weekday-btn" data-day="목">목</button>
-            <button type="button" class="weekday-btn" data-day="금">금</button>
-            <button type="button" class="weekday-btn" data-day="토">토</button>
-            <button type="button" class="weekday-btn" data-day="일">일</button>
-          </div>
-          <select id="monthdayPicker" class="modal-input" style="display:none"></select>
-        </div>
-        <label class="modal-label">실행 시각</label>
-        <div class="time-picker-row">
-          <select id="modalHour" class="modal-input time-select"></select>
-          <span class="time-sep">:</span>
-          <select id="modalMinute" class="modal-input time-select">
-            <option value="00">00</option>
-            <option value="10">10</option>
-            <option value="20">20</option>
-            <option value="30">30</option>
-            <option value="40">40</option>
-            <option value="50">50</option>
-          </select>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn-secondary" id="modalCancel">취소</button>
-        <button class="btn-primary" id="modalSave">저장</button>
-      </div>
-    </div>
-  </div>
-
   <!-- 조문 슬라이드 패널 -->
   <div id="articlePanel" class="article-panel">
     <div class="panel-inner">
@@ -357,6 +444,6 @@
     </div>
   </div>
 
-  <script src="/static/chat.js?v=21"></script>
+  <script src="/static/chat.js?v=37"></script>
 </body>
 </html>

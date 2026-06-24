@@ -288,6 +288,8 @@ def get_law(
 def search_prec(
     *,
     query: str | None = None,
+    search: int | None = None,   # 1=판례명(기본), 2=본문
+    jo: str | None = None,       # 참조법령명 (예: "최저임금법")
     display: int = 20,
     page: int = 1,
     sort: str | None = None,
@@ -310,11 +312,15 @@ def search_prec(
         "OC": auth,
         "target": "prec",
         "type": response_type,
-        "display": display,
+        "display": min(display, 100),
         "page": page,
     }
     if query is not None:
         params["query"] = query
+    if search is not None:
+        params["search"] = search
+    if jo is not None:
+        params["JO"] = jo
     if sort is not None:
         params["sort"] = sort
 

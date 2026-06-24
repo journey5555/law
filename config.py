@@ -11,10 +11,14 @@ LAW_SERVICE_URL = "http://www.law.go.kr/DRF/lawService.do"
 
 # SKT AIP 에이전트 Gateway
 AGENT_ID = os.getenv("AGENT_ID", "")
-SUMMARIZE_AGENT_ID    = os.getenv("SUMMARIZE_AGENT_ID",    "")
-SUMMARIZE_API_KEY     = os.getenv("SUMMARIZE_API_KEY",     "")
-LAW_PREC_AGENT_ID     = os.getenv("LAW_PREC_AGENT_ID",     "")
-LAW_PREC_AGENT_API_KEY = os.getenv("LAW_PREC_AGENT_API_KEY", "")
+SUMMARIZE_AGENT_ID      = os.getenv("SUMMARIZE_AGENT_ID",        "")
+SUMMARIZE_API_KEY       = os.getenv("SUMMARIZE_API_KEY",          "")
+LAW_PREC_AGENT_ID       = os.getenv("LAW_PREC_AGENT_ID",          "")
+LAW_PREC_AGENT_API_KEY  = os.getenv("LAW_PREC_AGENT_API_KEY",     "")
+LAW_PREC_TEST_AGENT_ID  = os.getenv("LAW_PREC_TEST_AGENT_ID",     "")
+LAW_PREC_TEST_AGENT_API_KEY = os.getenv("LAW_PREC_TEST_AGENT_API_KEY", "")
+LAW_KEYWORD_AGENT_ID    = os.getenv("LAW_KEYWORD_AGENT_ID",       "")
+LAW_KEYWORD_AGENT_API_KEY = os.getenv("LAW_KEYWORD_AGENT_API_KEY", "")
 
 # SKT AIP Knowledge API (Keycloak JWT)
 KNOWLEDGE_BASE_URL      = "https://aip.sktai.io/api/v1"
@@ -23,6 +27,7 @@ KNOWLEDGE_USER          = os.getenv("KNOWLEDGE_USER", "")
 KNOWLEDGE_PASSWORD      = os.getenv("KNOWLEDGE_PASSWORD", "")
 KNOWLEDGE_LAW_REPO_ID   = os.getenv("KNOWLEDGE_LAW_REPO_ID", "")
 KNOWLEDGE_PREC_REPO_ID  = os.getenv("KNOWLEDGE_PREC_REPO_ID", "")
+KNOWLEDGE_SUMM_REPO_ID  = os.getenv("KNOWLEDGE_SUMM_REPO_ID", "")
 AGENT_API_KEY = os.getenv("AGENT_API_KEY", "")
 AGENT_BASE_URL = os.getenv("AGENT_BASE_URL", "https://aip.sktai.io/api/v1/agent_gateway")
 AGENT_VERIFY_SSL = os.getenv("AGENT_VERIFY_SSL", "true").lower() in ("1", "true", "yes")

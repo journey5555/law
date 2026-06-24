@@ -182,6 +182,23 @@ def delete_documents(repo_id: str, doc_ids: list[str]) -> None:
     logger.info("문서 삭제 완료: %d건", len(doc_ids))
 
 
+def _hard_delete(resource_type: str, resource_id: str) -> None:
+    url = f"{KNOWLEDGE_BASE_URL}/{resource_type}/{resource_id}/hard-delete"
+    resp = _request("DELETE", url, timeout=120)
+    if not resp.ok:
+        raise KnowledgeApiError(
+            f"{resource_type} hard_delete 실패 ({resp.status_code}): {resp.text[:300]}",
+            status_code=resp.status_code,
+        )
+    logger.info("%s hard_delete 완료: %s", resource_type, resource_id)
+
+def hard_delete_datasource(datasource_id: str) -> None:
+    _hard_delete("datasources", datasource_id)
+
+def hard_delete_dataset(dataset_id: str) -> None:
+    _hard_delete("datasets", dataset_id)
+
+
 def ingest(
     repo_id: str,
     content: str,
@@ -191,6 +208,39 @@ def ingest(
     """upload → index 한 번에. 응답에 datasource_file_id 포함."""
     temp_path = upload_file(content, file_name)
     return add_document_and_index(repo_id, temp_path, file_name, metadata)
+
+
+def get_document_status(repo_id: str, document_id: str) -> dict[str, Any]:
+    """문서 상태 조회 (status, is_indexing 등)"""
+    url = f"{KNOWLEDGE_BASE_URL}/knowledge/repos/{repo_id}/documents/{document_id}"
+    resp = _request("GET", url, timeout=30)
+    if not resp.ok:
+        raise KnowledgeApiError(
+            f"문서 상태 조회 실패 ({resp.status_code}): {resp.text[:300]}",
+            status_code=resp.status_code,
+        )
+    return resp.json()
+
+
+def wait_for_embedding(repo_id: str, document_id: str, timeout_sec: int = 300, interval: int = 10) -> bool:
+    """문서 임베딩 완료까지 polling. 완료 시 True, 타임아웃 시 False"""
+    import time as _time
+    deadline = _time.time() + timeout_sec
+    while _time.time() < deadline:
+        try:
+            doc = get_document_status(repo_id, document_id)
+            status = doc.get("status", "")
+            is_indexing = doc.get("is_indexing", True)
+            if status == "embedded" and not is_indexing:
+                return True
+            if status == "failed":
+                logger.warning("임베딩 실패: %s", document_id)
+                return False
+        except KnowledgeApiError:
+            pass
+        _time.sleep(interval)
+    logger.warning("임베딩 타임아웃 (%ds): %s", timeout_sec, document_id)
+    return False
 
 
 # ── 마크다운 포맷터 ──────────────────────────────────────────────────────────

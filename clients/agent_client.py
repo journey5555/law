@@ -161,16 +161,17 @@ def stream_agent(
 
     full_response = []
     try:
-        for line in response.iter_lines(decode_unicode=True):
+        for line in response.iter_lines(chunk_size=8192, decode_unicode=True):
             if line:
                 full_response.append(line)
+                logger.debug("  SSE: %s", line[:300])
                 yield line
     except requests.exceptions.Timeout as e:
         raise AgentApiError("스트리밍 응답 시간 초과 (300초)") from e
     except requests.exceptions.ConnectionError as e:
         raise AgentApiError(f"스트리밍 연결 끊김: {e}") from e
     finally:
-        logger.debug("  스트림 원문: %s", "\n".join(full_response)[:500])
+        logger.debug("  스트림 원문: %s", "\n".join(full_response)[:1000])
 
 
 def stream_agent_tokens(
@@ -180,23 +181,32 @@ def stream_agent_tokens(
     api_key: str | None = None,
     router_path: str = "",
 ) -> Iterator[str]:
-    """스트리밍 응답에서 final_result 텍스트만 추출"""
+    """스트리밍 응답에서 final_result 텍스트만 추출. 에러 이벤트는 예외로 변환."""
     collected = []
     for line in stream_agent(
         message, agent_id=agent_id, api_key=api_key, router_path=router_path
     ):
-        if '"final_result"' not in line or "data:" not in line:
+        if "data:" not in line:
             continue
+        raw = line.split("data:", 1)[-1].strip()
         try:
-            payload = json.loads(line.split("data:", 1)[-1].strip())
-            token = payload.get("final_result", "")
-            if token:
-                collected.append(token)
-                yield token
+            payload = json.loads(raw)
         except (json.JSONDecodeError, IndexError):
             continue
+
+        # 에이전트 오류 이벤트 감지
+        if "error" in payload:
+            raise AgentApiError(str(payload["error"]))
+
+        token = payload.get("final_result", "")
+        if token:
+            collected.append(token)
+            yield token
+
     if collected:
         logger.info("  최종 답변: %s", "".join(collected)[:300])
+    else:
+        logger.warning("  final_result 없음 — 에이전트가 응답을 반환하지 않았습니다")
 
 
 def _extract_content(data: dict[str, Any]) -> str:
@@ -210,10 +220,7 @@ def _extract_content(data: dict[str, Any]) -> str:
 
 def _extract_error(response: requests.Response) -> str:
     try:
-        detail = response.json().get("detail", response.text)
-        if isinstance(detail, list):
-            return str(detail)
-        return str(detail)
+        return str(response.json().get("detail", response.text))
     except ValueError:
         return response.text or f"HTTP {response.status_code}"
 
