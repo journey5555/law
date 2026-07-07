@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>법령 서비스</title>
-  <link rel="stylesheet" href="/static/style.css?v=47" />
+  <link rel="stylesheet" href="/static/style.css?v=48" />
 </head>
 <body>
   <div class="app">
@@ -25,6 +25,7 @@
       <button class="tab" data-tab="keyword">키워드 검색</button>
       <button class="tab" data-tab="scheduler">수집 관리</button>
       <button class="tab" data-tab="ragtest">RAG 테스트</button>
+      <button class="tab" data-tab="batchtest">적재 테스트</button>
       <button class="tab" data-tab="notifications">알림<span id="notifBadge" class="tab-badge" style="display:none"></span></button>
       <a href="/pharma" class="tab tab-external">💊 Pharma</a>
     </nav>
@@ -391,6 +392,113 @@
       <div id="unifiedResults" class="unified-results"></div>
     </div>
 
+    <!-- 적재 테스트 탭 -->
+    <div id="tab-batchtest" class="tab-panel">
+      <div class="tab-info">
+        <span><strong>Knowledge 적재 테스트</strong> — 실제 법령/판례를 API에서 가져와 Knowledge에 한 번에 몇 건 적재할 수 있는지, 어떤 에러가 나는지 테스트합니다.</span>
+      </div>
+      <div class="batch-toolbar" style="flex-wrap:wrap">
+        <div class="batch-toolbar-group">
+          <label class="batch-settings-label">대상</label>
+          <select id="btTarget" class="batch-time-input" style="width:auto">
+            <option value="law">법령</option>
+            <option value="prec">판례</option>
+          </select>
+        </div>
+        <div class="batch-toolbar-group">
+          <label class="batch-settings-label">Repo</label>
+          <select id="btRepo" class="batch-time-input" style="width:auto">
+            <option value="law">법령 (law)</option>
+            <option value="prec">판례 (prec)</option>
+            <option value="summ">요약 (summ)</option>
+          </select>
+        </div>
+        <div class="batch-toolbar-group" id="btKeywordGroup" style="display:none">
+          <label class="batch-settings-label">수집 법령</label>
+          <span style="font-size:0.85rem;color:var(--text-muted);line-height:2">판례 배치 설정에서 로드</span>
+        </div>
+        <div class="batch-toolbar-group">
+          <label class="batch-settings-label">건수</label>
+          <input type="number" id="btCount" class="batch-time-input" style="width:80px" value="5" min="1" max="5000" />
+          <label style="display:flex;align-items:center;gap:0.3rem;font-size:0.85rem;cursor:pointer;white-space:nowrap">
+            <input type="checkbox" id="btAllCheck" />전체
+          </label>
+        </div>
+        <div class="batch-toolbar-group">
+          <label class="batch-settings-label">동시</label>
+          <input type="number" id="btConcurrent" class="batch-time-input" style="width:60px" value="1" min="1" max="10" title="병렬 업로드 동시 건수 (1=순차)" />
+        </div>
+        <div class="batch-toolbar-group">
+          <button class="btn-primary" id="btRunBtn">테스트 실행</button>
+          <button class="btn-secondary" id="btCancelBtn" style="display:none;color:var(--error)">중지</button>
+        </div>
+      </div>
+
+      <!-- 진행 상황 -->
+      <div style="padding:0.5rem 0 0">
+        <div class="scheduler-card" style="height:auto;max-height:calc(100dvh - 16rem)">
+          <div class="scheduler-card-header">
+            <h2 class="scheduler-card-title">진행 상황</h2>
+            <span id="btProgressText" style="font-size:0.82rem;color:var(--text-muted)"></span>
+          </div>
+          <div id="btProgressBarWrap" style="display:none;padding:0 1rem 0.5rem">
+            <div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden">
+              <div id="btProgressBar" style="background:var(--primary);height:100%;width:0%;transition:width 0.3s"></div>
+            </div>
+          </div>
+          <div class="scheduler-table-wrap" style="max-height:none;flex:1">
+            <div id="btLog" class="ragtest-log"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 스케줄 설정 -->
+      <div style="padding:0.5rem 0 0">
+        <div class="scheduler-card" style="height:auto">
+          <div class="scheduler-card-header">
+            <h2 class="scheduler-card-title">자동 실행 설정</h2>
+            <span id="btSchedStatus" style="font-size:0.82rem;color:var(--text-muted)"></span>
+          </div>
+          <div class="batch-toolbar" style="flex-wrap:wrap;padding:0.5rem 1rem 0.75rem">
+            <div class="batch-toolbar-group">
+              <label class="batch-settings-label">자동 실행</label>
+              <label style="display:flex;align-items:center;gap:0.3rem;font-size:0.85rem;cursor:pointer">
+                <input type="checkbox" id="btSchedEnabled" />
+                <span id="btSchedEnabledLabel">OFF</span>
+              </label>
+            </div>
+            <div class="batch-toolbar-group">
+              <label class="batch-settings-label">실행 시간</label>
+              <input type="time" id="btSchedTime" class="batch-time-input" value="02:00" />
+            </div>
+            <div class="batch-toolbar-group" style="font-size:0.82rem;color:var(--text-muted);line-height:2">
+              현재 폼 설정(대상·Repo·건수·동시)으로 저장됩니다
+            </div>
+            <div class="batch-toolbar-group">
+              <button class="btn-primary" id="btSchedSave">저장</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 이전 결과 -->
+      <div style="padding:0.5rem 0 0">
+        <div class="scheduler-card" style="height:auto">
+          <div class="scheduler-card-header">
+            <h2 class="scheduler-card-title">테스트 이력</h2>
+            <div style="display:flex;gap:0.5rem">
+              <button class="btn-secondary" id="btRefreshBtn">새로고침</button>
+              <button class="btn-secondary btn-danger-soft" id="btClearBtn">전체 삭제</button>
+            </div>
+          </div>
+          <div class="scheduler-table-wrap" style="max-height:none">
+            <div id="btResultList" class="log-list"></div>
+            <div id="btResultPaging" class="pagination batch-pagination"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- 알림 탭 -->
     <div id="tab-notifications" class="tab-panel">
       <div class="tab-info">
@@ -444,6 +552,6 @@
     </div>
   </div>
 
-  <script src="/static/chat.js?v=37"></script>
+  <script src="/static/chat.js?v=46"></script>
 </body>
 </html>

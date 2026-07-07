@@ -1,5 +1,5 @@
 /* ── Tab switching ── */
-const VALID_TABS = ["search", "prec", "chat", "scheduler", "ragtest", "unified", "notifications", "lawprec", "analysis", "keyword"];
+const VALID_TABS = ["search", "prec", "chat", "scheduler", "ragtest", "batchtest", "unified", "notifications", "lawprec", "analysis", "keyword"];
 let lawLoaded  = false;
 let precLoaded = false;
 let summarizeEnabled = false;
@@ -22,6 +22,7 @@ function switchTab(name) {
   }
   if (name === "notifications") { loadNotifications(); }
   if (name === "ragtest") { loadRagtestLaws(); }
+  if (name === "batchtest") { loadBatchtestResults(); loadBatchtestSchedule(); }
 }
 
 document.querySelectorAll(".tab").forEach(tab => {
@@ -2490,3 +2491,315 @@ keywordInput.addEventListener("input", () => {
   keywordInput.style.height = "auto";
   keywordInput.style.height = Math.min(keywordInput.scrollHeight, 200) + "px";
 });
+
+
+/* ════════════════════════════════
+   적재 테스트 탭
+   ════════════════════════════════ */
+
+let btRunning = false;
+
+function btAppendLog(message, status) {
+  const logEl = document.getElementById("btLog");
+  if (!logEl) return;
+  const line = document.createElement("div");
+  line.className = "ragtest-log-line";
+  line.innerHTML = `<span class="ragtest-log-dot ${esc(status || "start")}"></span><span>${esc(message)}</span>`;
+  logEl.appendChild(line);
+  logEl.parentElement.scrollTop = logEl.parentElement.scrollHeight;
+}
+
+document.getElementById("btTarget")?.addEventListener("change", () => {
+  const show = document.getElementById("btTarget").value === "prec";
+  document.getElementById("btKeywordGroup").style.display = show ? "" : "none";
+});
+
+document.getElementById("btAllCheck")?.addEventListener("change", () => {
+  const all = document.getElementById("btAllCheck").checked;
+  document.getElementById("btCount").disabled = all;
+});
+
+async function runBatchTest() {
+  if (btRunning) return;
+  const allCheck = document.getElementById("btAllCheck").checked;
+  const count    = allCheck ? 0 : (parseInt(document.getElementById("btCount").value) || 5);
+  const target     = document.getElementById("btTarget").value;
+  const repo       = document.getElementById("btRepo").value;
+  const concurrent = parseInt(document.getElementById("btConcurrent").value) || 1;
+  const runBtn    = document.getElementById("btRunBtn");
+  const cancelBtn = document.getElementById("btCancelBtn");
+  const logEl     = document.getElementById("btLog");
+  const progWrap  = document.getElementById("btProgressBarWrap");
+  const progBar   = document.getElementById("btProgressBar");
+  const progText  = document.getElementById("btProgressText");
+
+  btRunning = true;
+  runBtn.disabled = true;
+  cancelBtn.style.display = "";
+  logEl.innerHTML = "";
+  progWrap.style.display = "";
+  progBar.style.width = "0%";
+  progText.textContent = "";
+
+  const sep = document.createElement("div");
+  sep.className = "ragtest-log-sep";
+  sep.textContent = `── ${target === "law" ? "법령" : "판례"} ${count === 0 ? "전체" : count + "건"} → ${repo} repo (동시 ${concurrent}건)`;
+  logEl.appendChild(sep);
+
+  try {
+    const res = await fetch("/api/batchtest/run", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({count, target, repo, concurrent}),
+    });
+    const reader  = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, {stream: true});
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const raw = line.slice(6).trim();
+        if (raw === "[DONE]") break;
+        try {
+          const msg = JSON.parse(raw);
+          btAppendLog(msg.message, msg.status);
+          if (msg.progress !== undefined && msg.total) {
+            const pct = Math.round((msg.progress / msg.total) * 100);
+            progBar.style.width = pct + "%";
+            progText.textContent = `${msg.progress}/${msg.total} (${pct}%)`;
+          }
+        } catch {}
+      }
+    }
+  } catch (e) {
+    btAppendLog(`연결 오류: ${e.message}`, "error");
+  } finally {
+    btRunning = false;
+    runBtn.disabled = false;
+    cancelBtn.style.display = "none";
+    loadBatchtestResults();
+  }
+}
+
+async function cancelBatchTest() {
+  try { await fetch("/api/batchtest/cancel", {method: "POST"}); } catch {}
+}
+
+let _btAllResults = [];
+let _btResultPage = 1;
+const BT_RESULT_PAGE_SIZE = 20;
+
+function renderBatchtestPage() {
+  const listEl = document.getElementById("btResultList");
+  if (!listEl) return;
+  const results = _btAllResults;
+  if (!results.length) {
+    listEl.innerHTML = '<div class="empty-msg">테스트 이력이 없습니다.</div>';
+    return;
+  }
+  const start = (_btResultPage - 1) * BT_RESULT_PAGE_SIZE;
+  const page  = results.slice(start, start + BT_RESULT_PAGE_SIZE);
+  listEl.innerHTML = page.map(r => {
+      const targetLabel = r.target === "law" ? "법령" : "판례";
+      const em = r.embed || {};
+      const ec = r.embed_concurrency || {};
+      const details = r.details || [];
+      const errReasons = r.error_reasons || [];
+
+      // 시간
+      const startTime = (r.run_at || "").split(" ")[1] || r.run_at || "";
+      const endTime = (r.finished_at || "").split(" ")[1] || "";
+      const dateStr = (r.run_at || "").split(" ")[0] || "";
+
+      // 상태 뱃지 색상
+      const hasError = r.errors > 0 || em.failed > 0;
+      const allSkip = r.uploaded === 0 && r.skipped > 0;
+      const badgeColor = hasError ? "#ef4444" : allSkip ? "#f59e0b" : "#22c55e";
+      const badgeLabel = hasError ? "일부 실패" : allSkip ? "전체 중복" : "성공";
+
+      // 통계 숫자 그리드
+      const stats = [
+        {label: "요청", value: r.requested === 0 ? (r.uploaded + r.skipped + r.errors) : r.requested, unit: "건"},
+        {label: "업로드", value: r.uploaded, unit: "건"},
+        {label: "중복", value: r.skipped, unit: "건"},
+        {label: "실패", value: r.errors, unit: "건", red: r.errors > 0},
+        {label: "총 청크", value: r.total_chunks || 0, unit: "개"},
+      ];
+      const embedStats = em.embedded ? [
+        {label: "임베딩", value: em.embedded, unit: "건"},
+        {label: "임베딩실패", value: (em.failed || 0) + (em.timeout || 0), unit: "건", red: (em.failed || 0) > 0},
+      ] : [];
+      const timeStats = [
+        {label: "총 소요", value: r.total_sec, unit: "초"},
+        {label: "업로드", value: r.upload_sec || 0, unit: "초"},
+        {label: "임베딩", value: r.embed_sec || 0, unit: "초"},
+        {label: "건당 평균", value: r.avg_sec || 0, unit: "초"},
+      ];
+      const concStats = ec.avg ? [
+        {label: "동시처리 평균", value: ec.avg, unit: "건"},
+        {label: "동시처리 최대", value: ec.max, unit: "건"},
+        {label: "처리속도", value: ec.throughput, unit: "건/초"},
+      ] : [];
+
+      function statGrid(items, title) {
+        if (!items.length) return "";
+        return `<div style="margin-bottom:0.75rem">
+          ${title ? `<div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px">${title}</div>` : ""}
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:6px">
+            ${items.map(s => `<div style="background:var(--bg,#f8f9fa);border-radius:6px;padding:6px 8px;text-align:center">
+              <div style="font-size:1.1rem;font-weight:700;${s.red ? 'color:#ef4444' : ''}">${s.value}<span style="font-size:0.7rem;font-weight:400;color:var(--text-muted);margin-left:2px">${s.unit}</span></div>
+              <div style="font-size:0.7rem;color:var(--text-muted)">${s.label}</div>
+            </div>`).join("")}
+          </div>
+        </div>`;
+      }
+
+      // 에러 블록
+      const errBlock = errReasons.length ? `<div style="margin-bottom:0.75rem;padding:0.5rem 0.75rem;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;font-size:0.8rem">
+        <div style="font-weight:600;color:#ef4444;margin-bottom:4px">에러 ${errReasons.length}건</div>
+        ${errReasons.map(e => `<div style="padding:2px 0;color:#7f1d1d">· ${esc(e.name)} <span style="color:#9ca3af">[${esc(e.phase)}]</span> ${esc(e.error)}${e.status_code ? ' <span style="background:#fee2e2;padding:0 4px;border-radius:3px;font-size:0.7rem">HTTP ' + e.status_code + '</span>' : ''}</div>`).join("")}
+      </div>` : "";
+
+      // 건별 상세 테이블
+      const detailTable = details.length ? `<div style="margin-top:0.5rem">
+        <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px">건별 상세</div>
+        <table style="width:100%;font-size:0.78rem;border-collapse:collapse">
+          <thead><tr style="border-bottom:1px solid var(--border);text-align:left">
+            <th style="padding:4px 6px;font-weight:600;width:34%">이름</th>
+            <th style="padding:4px 6px;font-weight:600;width:10%">크기</th>
+            <th style="padding:4px 6px;font-weight:600;width:10%">청크</th>
+            <th style="padding:4px 6px;font-weight:600;width:10%">업로드</th>
+            <th style="padding:4px 6px;font-weight:600;width:18%">임베딩</th>
+            <th style="padding:4px 6px;font-weight:600;width:18%">상태</th>
+          </tr></thead>
+          <tbody>${details.map(d => {
+            const ok = d.status === "uploaded" || d.status === "success";
+            const statusBadge = ok
+              ? '<span style="color:#22c55e">●</span> 성공'
+              : d.status === "duplicate" ? '<span style="color:#f59e0b">●</span> 중복'
+              : `<span style="color:#ef4444">●</span> 실패`;
+            const embedBadge = d.embed_status === "embedded"
+              ? `<span style="color:#22c55e">● ${d.embed_sec || ""}초</span>`
+              : d.embed_status === "failed" ? `<span style="color:#ef4444">● 실패</span>`
+              : d.embed_status === "timeout" ? `<span style="color:#f59e0b">● 타임아웃</span>`
+              : d.embed_status === "skip" || d.embed_status === "no_doc_id" ? '<span style="color:#9ca3af">—</span>'
+              : `<span style="color:#9ca3af">${esc(d.embed_status || "—")}</span>`;
+            return `<tr style="border-bottom:1px solid var(--border)">
+              <td style="padding:4px 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:0" title="${esc(d.name)}">${esc(d.name)}${d.articles ? ' <span style="color:var(--text-muted)">' + d.articles + '조</span>' : ''}</td>
+              <td style="padding:4px 6px">${d.size_kb ? d.size_kb + 'KB' : '—'}</td>
+              <td style="padding:4px 6px">${d.chunk_count ? d.chunk_count : '—'}</td>
+              <td style="padding:4px 6px">${d.elapsed_sec ? d.elapsed_sec + '초' : '—'}</td>
+              <td style="padding:4px 6px">${embedBadge}</td>
+              <td style="padding:4px 6px">${statusBadge}</td>
+            </tr>`;
+          }).join("")}</tbody>
+        </table>
+      </div>` : "";
+
+      return `
+        <div style="border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:0.75rem;background:var(--surface)">
+          <div style="padding:0.75rem 1rem;cursor:pointer;display:flex;align-items:center;gap:0.75rem"
+               onclick="const d=this.nextElementSibling;d.style.display=d.style.display==='none'?'':'none'">
+            <div style="min-width:8px;min-height:8px;width:8px;height:8px;border-radius:50%;background:${badgeColor}"></div>
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:600;font-size:0.88rem">${targetLabel} ${r.requested === 0 ? (r.uploaded + r.skipped + r.errors) : r.requested}건 → ${r.repo} repo</div>
+              <div style="font-size:0.78rem;color:var(--text-muted);margin-top:2px">${dateStr} ${startTime}${endTime ? ' ~ ' + endTime : ''} · ${r.total_sec}초${r.avg_sec ? ' · 건당 ' + r.avg_sec + '초' : ''}</div>
+            </div>
+            <div style="display:flex;gap:0.5rem;flex-shrink:0;font-size:0.78rem">
+              <span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:12px">${r.uploaded}성공</span>
+              ${r.skipped ? '<span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:12px">' + r.skipped + '중복</span>' : ''}
+              ${r.errors ? '<span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:12px">' + r.errors + '실패</span>' : ''}
+              ${em.embedded ? '<span style="background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:12px">임베딩 ' + em.embedded + '</span>' : ''}
+            </div>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;opacity:0.4"><path d="M6 9l6 6 6-6"/></svg>
+          </div>
+          <div style="display:none;padding:0.75rem 1rem;border-top:1px solid var(--border)">
+            ${statGrid([...stats, ...embedStats], "처리 결과")}
+            ${statGrid(timeStats, "소요 시간")}
+            ${statGrid(concStats, "임베딩 동시처리")}
+            ${errBlock}
+            ${detailTable}
+          </div>
+        </div>`;
+    }).join("");
+  renderBatchPagination("btResultPaging", results.length, _btResultPage, BT_RESULT_PAGE_SIZE, p => {
+    _btResultPage = p;
+    renderBatchtestPage();
+    document.getElementById("btResultList").scrollIntoView({behavior: "smooth", block: "start"});
+  });
+}
+
+async function loadBatchtestResults() {
+  try {
+    const res  = await fetch("/api/batchtest/results");
+    const data = await res.json();
+    _btAllResults = data.results || [];
+    _btResultPage = 1;
+    renderBatchtestPage();
+  } catch {
+    const listEl = document.getElementById("btResultList");
+    if (listEl) listEl.innerHTML = '<div class="empty-msg state-msg error">불러오기 실패</div>';
+  }
+}
+
+async function clearBatchtestResults() {
+  if (!confirm("테스트 이력을 모두 삭제하시겠습니까?")) return;
+  try { await fetch("/api/batchtest/results", {method: "DELETE"}); } catch {}
+  loadBatchtestResults();
+}
+
+async function loadBatchtestSchedule() {
+  try {
+    const cfg = await fetch("/api/batchtest/schedule").then(r => r.json());
+    document.getElementById("btSchedEnabled").checked = !!cfg.enabled;
+    document.getElementById("btSchedEnabledLabel").textContent = cfg.enabled ? "ON" : "OFF";
+    document.getElementById("btSchedTime").value = cfg.run_time || "02:00";
+    document.getElementById("btTarget").value    = cfg.target || "prec";
+    document.getElementById("btRepo").value      = cfg.repo   || "prec";
+    document.getElementById("btCount").value     = cfg.count  ?? 0;
+    document.getElementById("btConcurrent").value = cfg.concurrent ?? 1;
+    document.getElementById("btAllCheck").checked = (cfg.count === 0);
+    document.getElementById("btCount").disabled   = (cfg.count === 0);
+    document.getElementById("btKeywordGroup").style.display =
+      (cfg.target === "prec") ? "" : "none";
+    const next = cfg.enabled ? `매일 ${cfg.run_time} 자동 실행` : "자동 실행 꺼짐";
+    document.getElementById("btSchedStatus").textContent = next;
+  } catch {}
+}
+
+async function saveBatchtestSchedule() {
+  const enabled    = document.getElementById("btSchedEnabled").checked;
+  const run_time   = document.getElementById("btSchedTime").value || "02:00";
+  const target     = document.getElementById("btTarget").value;
+  const repo       = document.getElementById("btRepo").value;
+  const allCheck   = document.getElementById("btAllCheck").checked;
+  const count      = allCheck ? 0 : (parseInt(document.getElementById("btCount").value) || 5);
+  const concurrent = parseInt(document.getElementById("btConcurrent").value) || 1;
+  try {
+    await fetch("/api/batchtest/schedule", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({enabled, run_time, target, repo, count, concurrent}),
+    });
+    document.getElementById("btSchedStatus").textContent =
+      enabled ? `저장됨 — 매일 ${run_time} 자동 실행` : "저장됨 — 자동 실행 꺼짐";
+  } catch {
+    document.getElementById("btSchedStatus").textContent = "저장 실패";
+  }
+}
+
+document.getElementById("btSchedEnabled")?.addEventListener("change", () => {
+  const on = document.getElementById("btSchedEnabled").checked;
+  document.getElementById("btSchedEnabledLabel").textContent = on ? "ON" : "OFF";
+});
+document.getElementById("btSchedSave")?.addEventListener("click", saveBatchtestSchedule);
+
+document.getElementById("btRunBtn")?.addEventListener("click", runBatchTest);
+document.getElementById("btCancelBtn")?.addEventListener("click", cancelBatchTest);
+document.getElementById("btRefreshBtn")?.addEventListener("click", loadBatchtestResults);
+document.getElementById("btClearBtn")?.addEventListener("click", clearBatchtestResults);

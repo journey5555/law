@@ -11,6 +11,13 @@ DB_FILE   = _BASE_DIR / "data" / "pharma.db"
 def init_db() -> None:
     DB_FILE.parent.mkdir(exist_ok=True)
     with get_conn() as conn:
+        # 기존 DB 컬럼 마이그레이션
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(attachment_hashes)").fetchall()}
+        if "knowledge_id" not in cols:
+            try:
+                conn.execute("ALTER TABLE attachment_hashes ADD COLUMN knowledge_id TEXT")
+            except Exception:
+                pass
         conn.executescript("""
         CREATE TABLE IF NOT EXISTS drugs (
             id             TEXT PRIMARY KEY,
@@ -42,6 +49,22 @@ def init_db() -> None:
             created_at TEXT NOT NULL,
             read       INTEGER DEFAULT 0,
             FOREIGN KEY (drug_id) REFERENCES drugs(id)
+        );
+        CREATE TABLE IF NOT EXISTS attachment_hashes (
+            sha256        TEXT PRIMARY KEY,
+            doc_id        TEXT NOT NULL,
+            filename      TEXT,
+            saved_at      TEXT NOT NULL,
+            knowledge_id  TEXT
+        );
+        CREATE TABLE IF NOT EXISTS send_history (
+            id            TEXT PRIMARY KEY,
+            doc_id        TEXT NOT NULL,
+            filename      TEXT,
+            sent_to       TEXT NOT NULL,
+            subject       TEXT,
+            sent_at       TEXT NOT NULL,
+            extracted_json TEXT
         );
         """)
 

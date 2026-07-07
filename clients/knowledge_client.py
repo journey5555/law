@@ -100,10 +100,16 @@ def upload_file(content: str | bytes, file_name: str) -> str:
     if isinstance(content, str):
         content = content.encode("utf-8")
 
+    if file_name.endswith(".json"):
+        mime = "application/json"
+    elif file_name.endswith(".pdf"):
+        mime = "application/pdf"
+    else:
+        mime = "text/markdown"
     started = time.perf_counter()
     resp = _request(
         "POST", UPLOAD_URL,
-        files={"files": (file_name, io.BytesIO(content), "text/markdown")},
+        files={"files": (file_name, io.BytesIO(content), mime)},
         timeout=60,
     )
     elapsed = time.perf_counter() - started
@@ -140,20 +146,34 @@ def add_document_and_index(
         body["document_metadata"] = metadata
 
     started = time.perf_counter()
-    resp = _request(
-        "POST", url,
-        extra_headers={"Content-Type": "application/json"},
-        json=body,
-        timeout=120,
-    )
-    elapsed = time.perf_counter() - started
-
-    if not resp.ok:
+    for attempt in range(2):
+        resp = _request(
+            "POST", url,
+            extra_headers={"Content-Type": "application/json"},
+            json=body,
+            timeout=120,
+        )
+        if resp.ok:
+            break
+        if attempt == 0 and "No documents" in resp.text:
+            # ponytail: temp file not yet visible on server side, retry once after delay
+            time.sleep(3)
+            continue
         if resp.status_code == 406 and "same name" in resp.text:
             raise KnowledgeDuplicateError(
                 f"이미 존재하는 파일: {file_name}",
                 status_code=406,
             )
+        if "already in process" in resp.text or "already in progress" in resp.text:
+            logger.info("인덱싱 이미 진행 중 (정상): %s", file_name)
+            return resp.json() if resp.text else {}
+        raise KnowledgeApiError(
+            f"인덱싱 실패 ({resp.status_code}): {resp.text[:300]}",
+            status_code=resp.status_code,
+        )
+    elapsed = time.perf_counter() - started
+
+    if not resp.ok:
         raise KnowledgeApiError(
             f"인덱싱 실패 ({resp.status_code}): {resp.text[:300]}",
             status_code=resp.status_code,
@@ -211,7 +231,7 @@ def ingest(
 
 
 def get_document_status(repo_id: str, document_id: str) -> dict[str, Any]:
-    """문서 상태 조회 (status, is_indexing 등)"""
+    """문서 상태 조회 (status, is_indexing, chunk_count 등)"""
     url = f"{KNOWLEDGE_BASE_URL}/knowledge/repos/{repo_id}/documents/{document_id}"
     resp = _request("GET", url, timeout=30)
     if not resp.ok:
@@ -219,7 +239,79 @@ def get_document_status(repo_id: str, document_id: str) -> dict[str, Any]:
             f"문서 상태 조회 실패 ({resp.status_code}): {resp.text[:300]}",
             status_code=resp.status_code,
         )
-    return resp.json()
+    data = resp.json()
+    # 응답이 {"data": {...}} 형태일 수 있음
+    if isinstance(data, dict) and "data" in data and isinstance(data["data"], dict):
+        return data["data"]
+    return data
+
+
+def list_documents(repo_id: str) -> list[dict]:
+    """Knowledge repo의 전체 문서 목록 반환 (id, name, status 포함)"""
+    url = f"{KNOWLEDGE_BASE_URL}/knowledge/repos/{repo_id}/documents"
+    docs: list[dict] = []
+    page = 1
+    while True:
+        resp = _request("GET", url, params={"page": page, "size": 100}, timeout=30)
+        if not resp.ok:
+            raise KnowledgeApiError(
+                f"문서 목록 조회 실패 ({resp.status_code}): {resp.text[:300]}",
+                status_code=resp.status_code,
+            )
+        data = resp.json()
+        docs.extend(data.get("data", []))
+        last_page = data.get("payload", {}).get("pagination", {}).get("last_page", 1)
+        if page >= last_page:
+            break
+        page += 1
+    return docs
+
+
+def list_document_names(repo_id: str) -> set[str]:
+    """Knowledge repo의 모든 문서 파일명 set 반환 (중복 사전 체크용)"""
+    url = f"{KNOWLEDGE_BASE_URL}/knowledge/repos/{repo_id}/documents"
+    names: set[str] = set()
+    page = 1
+    while True:
+        resp = _request("GET", url, params={"page": page, "size": 100}, timeout=30)
+        if not resp.ok:
+            raise KnowledgeApiError(
+                f"문서 목록 조회 실패 ({resp.status_code}): {resp.text[:300]}",
+                status_code=resp.status_code,
+            )
+        data = resp.json()
+        for doc in data.get("data", []):
+            if name := doc.get("name"):
+                names.add(name)
+        last_page = data.get("payload", {}).get("pagination", {}).get("last_page", 1)
+        if page >= last_page:
+            break
+        page += 1
+    return names
+
+
+def get_document_chunks(repo_id: str, document_id: str) -> dict[str, Any]:
+    """문서의 청크 목록 조회 — 전체 페이지 수집"""
+    url = f"{KNOWLEDGE_BASE_URL}/knowledge/repos/{repo_id}/documents/{document_id}/chunks"
+    all_chunks: list = []
+    page = 1
+    while True:
+        resp = _request("GET", url, params={"page": page, "size": 100}, timeout=30)
+        if not resp.ok:
+            raise KnowledgeApiError(
+                f"청크 조회 실패 ({resp.status_code}): {resp.text[:300]}",
+                status_code=resp.status_code,
+            )
+        data = resp.json()
+        chunks = data if isinstance(data, list) else data.get("data", [])
+        if isinstance(chunks, list):
+            all_chunks.extend(chunks)
+        pagination = data.get("payload", {}).get("pagination", {}) if isinstance(data, dict) else {}
+        last_page = pagination.get("last_page", 1)
+        if page >= last_page:
+            break
+        page += 1
+    return {"chunks": all_chunks, "count": len(all_chunks)}
 
 
 def wait_for_embedding(repo_id: str, document_id: str, timeout_sec: int = 300, interval: int = 10) -> bool:
@@ -241,6 +333,34 @@ def wait_for_embedding(repo_id: str, document_id: str, timeout_sec: int = 300, i
         _time.sleep(interval)
     logger.warning("임베딩 타임아웃 (%ds): %s", timeout_sec, document_id)
     return False
+
+
+def search_by_document_id(repo_id: str, document_id: str, top_k: int = 20) -> str:
+    """document_id 필터로 Knowledge 검색 → 청크 텍스트 합쳐서 반환"""
+    url = f"{KNOWLEDGE_BASE_URL}/knowledge/repos/{repo_id}/retrieval"
+    body = {
+        "query_text": document_id,
+        "repo_id":    repo_id,
+        "retrieval_options": {
+            "retrieval_mode": "sparse",
+            "top_k":          top_k,
+            "filter":         f'document_id eq "{document_id}"',
+        },
+    }
+    resp = _request("POST", url, extra_headers={"Content-Type": "application/json"},
+                    json=body, timeout=30)
+    if not resp.ok:
+        raise KnowledgeApiError(
+            f"검색 실패 ({resp.status_code}): {resp.text[:300]}",
+            status_code=resp.status_code,
+        )
+    data = resp.json()
+    chunks = data.get("data", [])
+    if not chunks:
+        return ""
+    # score 기준 정렬 후 텍스트 합치기
+    chunks.sort(key=lambda c: c.get("score", 0), reverse=True)
+    return "\n\n".join(c.get("content", "") for c in chunks if c.get("content"))
 
 
 # ── 마크다운 포맷터 ──────────────────────────────────────────────────────────
@@ -309,7 +429,7 @@ def prec_to_markdown(prec_data: dict[str, Any]) -> str:
             lines += [f"## {label}", "", val, ""]
 
     content = str(prec_data.get("content") or "").strip()
-    if content and not prec_data.get("issues") and not prec_data.get("summary"):
+    if content:
         lines += ["## 판례 전문", "", content, ""]
 
     return "\n".join(lines)

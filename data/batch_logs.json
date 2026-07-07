@@ -1,5 +1,726 @@
 [
   {
+    "id": "af28e9b1",
+    "started_at": "2026-06-24 12:12:00",
+    "finished_at": "2026-06-24 12:12:52",
+    "elapsed_sec": 52,
+    "total": 142,
+    "changed": 0,
+    "errors": 0,
+    "results": [
+      {
+        "name": "가사근로자의 고용개선 등에 관한 법률",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "가사근로자의 고용개선 등에 관한 법률 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "가사근로자의 고용개선 등에 관한 법률 시행규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "건설근로자의 고용개선 등에 관한 법률",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "건설근로자의 고용개선 등에 관한 법률 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "건설근로자의 고용개선 등에 관한 법률 시행규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "경제사회노동위원회법",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "경제사회노동위원회법 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "고용노동부 소관 비상대비에 관한 법률 시행규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "고용노동부 소관 비영리법인의 설립 및 감독에 관한 규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "고용노동부와 그 소속기관 직제",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "고용노동부와 그 소속기관 직제 시행규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "고용보험 및 산업재해보상보험의 보험료징수 등에 관한 법률",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "고용보험 및 산업재해보상보험의 보험료징수 등에 관한 법률 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "고용보험 및 산업재해보상보험의 보험료징수 등에 관한 법률 시행규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "고용보험법",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "고용보험법 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "고용보험법 시행규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "고용보험ㆍ산업재해보상보험의 보험관계 성립신고 등의 촉진을 위한 특별조치법",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "고용상 연령차별금지 및 고령자고용촉진에 관한 법률",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "고용상 연령차별금지 및 고령자고용촉진에 관한 법률 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "고용상 연령차별금지 및 고령자고용촉진에 관한 법률 시행규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "고용정책 기본법",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "고용정책 기본법 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "고용정책 기본법 시행규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "공무원의 노동조합 설립 및 운영 등에 관한 법률",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "공무원의 노동조합 설립 및 운영 등에 관한 법률 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "공무원의 노동조합 설립 및 운영 등에 관한 법률 시행규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "공인노무사법",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "공인노무사법 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "공인노무사법 시행규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "공휴일에 관한 법률",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "교원의 노동조합 설립 및 운영 등에 관한 법률",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "교원의 노동조합 설립 및 운영 등에 관한 법률 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "교원의 노동조합 설립 및 운영 등에 관한 법률 시행규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "구직자 취업촉진 및 생활안정지원에 관한 법률",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "구직자 취업촉진 및 생활안정지원에 관한 법률 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "구직자 취업촉진 및 생활안정지원에 관한 법률 시행규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "국가기술자격법",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "국가기술자격법 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "국가기술자격법 시행규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "국민 평생 직업능력 개발법",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "국민 평생 직업능력 개발법 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "국민 평생 직업능력 개발법 시행규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "근로감독관규정",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "근로감독관증 규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "근로기준법",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "근로기준법 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "근로기준법 시행규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "근로복지기본법",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "근로복지기본법 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "근로복지기본법 시행규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "근로자참여 및 협력증진에 관한 법률",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "근로자참여 및 협력증진에 관한 법률 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "근로자참여 및 협력증진에 관한 법률 시행규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "근로자퇴직급여 보장법",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "근로자퇴직급여 보장법 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "근로자퇴직급여 보장법 시행규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "기간제 및 단시간근로자 보호 등에 관한 법률",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "기간제 및 단시간근로자 보호 등에 관한 법률 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "기간제 및 단시간근로자 보호 등에 관한 법률 시행규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "남녀고용평등과 일ㆍ가정 양립 지원에 관한 법률",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "남녀고용평등과 일ㆍ가정 양립 지원에 관한 법률 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "남녀고용평등과 일ㆍ가정 양립 지원에 관한 법률 시행규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "노동위원회법",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "노동위원회법 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "노동위원회법 시행규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "노동절 제정에 관한 법률",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "노동조합 및 노동관계조정법",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "노동조합 및 노동관계조정법 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "노동조합 및 노동관계조정법 시행규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "노사관계 발전 지원에 관한 법률",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "노사관계 발전 지원에 관한 법률 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "사회적기업 육성법",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "사회적기업 육성법 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "사회적기업 육성법 시행규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "산업안전보건기준에 관한 규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "산업안전보건법",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "산업안전보건법 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "산업안전보건법 시행규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "산업재해보상보험법",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "산업재해보상보험법 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "산업재해보상보험법 시행규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "산업전환에 따른 고용안정 지원 등에 관한 법률",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "산업전환에 따른 고용안정 지원 등에 관한 법률 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "산업현장 일학습병행 지원에 관한 법률",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "산업현장 일학습병행 지원에 관한 법률 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "산업현장 일학습병행 지원에 관한 법률 시행규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "숙련기술장려법",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "숙련기술장려법 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "숙련기술장려법 시행규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "여성의 경제활동 실태조사 등에 관한 규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "여성의 경제활동 촉진과 경력단절 예방법",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "여성의 경제활동 촉진과 경력단절 예방법 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "여성의 경제활동 촉진과 경력단절 예방법 시행규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "외국인근로자의 고용 등에 관한 법률",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "외국인근로자의 고용 등에 관한 법률 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "외국인근로자의 고용 등에 관한 법률 시행규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "유해ㆍ위험작업의 취업 제한에 관한 규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "임금채권보장법",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "임금채권보장법 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "임금채권보장법 시행규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "자격기본법",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "자격기본법 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "자격기본법 시행규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "장애인고용촉진 및 직업재활법",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "장애인고용촉진 및 직업재활법 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "장애인고용촉진 및 직업재활법 시행규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "중대재해 처벌 등에 관한 법률",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "중대재해 처벌 등에 관한 법률 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "직업교육훈련 촉진법",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "직업교육훈련 촉진법 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "직업안정법",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "직업안정법 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "직업안정법 시행규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "진폐의 예방과 진폐근로자의 보호 등에 관한 법률",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "진폐의 예방과 진폐근로자의 보호 등에 관한 법률 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "진폐의 예방과 진폐근로자의 보호 등에 관한 법률 시행규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "채용절차의 공정화에 관한 법률",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "채용절차의 공정화에 관한 법률 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "채용절차의 공정화에 관한 법률 시행규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "청년고용촉진 특별법",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "청년고용촉진 특별법 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "최저임금법",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "최저임금법 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "최저임금법 시행규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "통상환경변화 대응 및 지원 등에 관한 법률",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "통상환경변화 대응 및 지원 등에 관한 법률 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "통상환경변화 대응 및 지원 등에 관한 법률 시행규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "파견근로자 보호 등에 관한 법률",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "파견근로자 보호 등에 관한 법률 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "파견근로자 보호 등에 관한 법률 시행규칙",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "파독 광부ㆍ간호사ㆍ간호조무사에 대한 지원 및 기념사업에 관한 법률",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "파독 광부ㆍ간호사ㆍ간호조무사에 대한 지원 및 기념사업에 관한 법률 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "필수업무 지정 및 종사자 보호ㆍ지원에 관한 법률",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "필수업무 지정 및 종사자 보호ㆍ지원에 관한 법률 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "한국고용노동교육원법",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "한국고용노동교육원법 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "한국산업안전보건공단법",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "한국산업안전보건공단법 시행령",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "한국산업인력공단법",
+        "status": "success",
+        "message": "변동없음"
+      },
+      {
+        "name": "한국산업인력공단법 시행령",
+        "status": "success",
+        "message": "변동없음"
+      }
+    ]
+  },
+  {
     "id": "d150a154",
     "started_at": "2026-06-23 12:12:00",
     "finished_at": "2026-06-23 12:12:48",

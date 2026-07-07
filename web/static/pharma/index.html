@@ -16,6 +16,8 @@
     <li class="nav-tab" data-tab="drugs">약품 관리</li>
     <li class="nav-tab" data-tab="results">수신 이력</li>
     <li class="nav-tab" data-tab="alerts">알림 <span class="badge-alert" id="alertBadge" style="display:none">0</span></li>
+    <li class="nav-tab" data-tab="gmailtest">Gmail 테스트</li>
+    <li class="nav-tab" data-tab="upload">문서 업로드</li>
   </ul>
   <div class="header-right">
     <div class="gmail-status">
@@ -23,6 +25,7 @@
       <span id="gmailStatusText">Gmail 미연결</span>
     </div>
     <button class="btn btn-outline btn-sm" id="syncBtn" style="display:none">동기화</button>
+    <button class="btn btn-outline btn-sm" id="notifBtn" title="브라우저 알림" style="display:none">🔔 알림 꺼짐</button>
     <button class="btn btn-primary btn-sm" id="gmailConnectBtn">Gmail 연결</button>
   </div>
 </header>
@@ -86,6 +89,37 @@
   </div>
 </div>
 
+<!-- ── Gmail API 테스트 ──────────────────────────── -->
+<div class="page" id="page-gmailtest">
+  <div class="card" style="margin-bottom:16px">
+    <div class="section-title">Gmail 검색 테스트</div>
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">Gmail 검색 연산자 사용 가능 (from:, subject:, after:, AND/OR 등)</p>
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <input type="text" class="form-control" id="gmailTestQuery" placeholder="예: from:cro-lab.com 임상결과" style="flex:1" />
+      <input type="number" class="form-control" id="gmailTestMax" value="10" min="1" max="50" style="width:80px" title="최대 건수" />
+      <button class="btn btn-primary" id="gmailTestBtn" onclick="runGmailTest()">검색</button>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px">
+      <button class="btn btn-ghost btn-sm" onclick="setGmailQuery('in:inbox is:unread')">미읽음</button>
+      <button class="btn btn-ghost btn-sm" onclick="setGmailQuery('in:inbox newer_than:7d')">최근 7일</button>
+      <button class="btn btn-ghost btn-sm" onclick="setGmailQuery('has:attachment newer_than:30d')">첨부파일</button>
+    </div>
+  </div>
+  <div id="gmailTestStatus" style="font-size:13px;color:var(--text-muted);margin-bottom:8px"></div>
+  <div id="gmailTestResults"></div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="section-title">Pub/Sub Watch (실시간 알림)</div>
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:10px">Gmail → Pub/Sub watch를 활성화하면 새 메일 도착 시 30초 이내 자동 알림됩니다.</p>
+    <div id="watchStatusText" style="font-size:13px;margin-bottom:10px">상태 조회 중...</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-primary btn-sm" id="watchStartBtn" onclick="watchStart()">Watch 시작</button>
+      <button class="btn btn-ghost btn-sm"   id="watchStopBtn"  onclick="watchStop()">Watch 중지</button>
+    </div>
+    <div id="pullTestResults" style="margin-top:12px"></div>
+  </div>
+</div>
+
 <!-- ── 약품 추가/수정 모달 ──────────────────────── -->
 <div class="modal-backdrop" id="drugModal">
   <div class="modal">
@@ -136,6 +170,153 @@
     <div class="modal-body">
       <div class="detail-meta" id="emailDetailMeta"></div>
       <div class="email-body" id="emailDetailBody"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── 첨부파일 미리보기 모달 ────────────────────────── -->
+<div class="modal-backdrop" id="attachModal">
+  <div class="modal" style="width:700px;max-height:80vh">
+    <div class="modal-header">
+      <span class="modal-title" id="attachModalTitle">첨부파일</span>
+      <div style="display:flex;gap:8px;align-items:center">
+        <a id="attachDownloadBtn" class="btn btn-ghost btn-sm" download>다운로드</a>
+        <button class="modal-close" onclick="closeModal('attachModal')">×</button>
+      </div>
+    </div>
+    <div class="modal-body" style="padding:0;overflow:auto;max-height:calc(80vh - 60px);display:flex;align-items:center;justify-content:center">
+      <div id="attachPreviewContent" style="width:100%"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── 문서 업로드 ────────────────────────────────────── -->
+<div class="page" id="page-upload">
+  <div class="card" style="max-width:560px;margin-bottom:16px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div class="section-title" style="margin:0">수신 첨부파일</div>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-outline" style="padding:4px 10px;font-size:12px" onclick="importFromKnowledge()">Knowledge 불러오기</button>
+        <button class="btn btn-outline" style="padding:4px 10px;font-size:12px" onclick="loadAttachments()">새로고침</button>
+      </div>
+    </div>
+    <div id="attachmentList" style="font-size:13px;color:var(--text-muted)">로딩 중...</div>
+  </div>
+
+  <div class="card" style="max-width:560px;margin-bottom:16px">
+    <div class="section-title">SHA-256 중복 체크 테스트</div>
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">파일을 선택하면 SHA-256 해시를 계산하여 DB에 동일 파일이 있는지 확인합니다.</p>
+    <div class="form-group">
+      <label class="form-label">파일 선택</label>
+      <input type="file" class="form-control" id="dedupFile" />
+    </div>
+    <button class="btn btn-primary" onclick="testDedup()">중복 확인</button>
+    <div id="dedupResult" style="margin-top:12px;display:none;padding:12px;border-radius:6px;font-size:13px"></div>
+  </div>
+
+  <div class="card" style="max-width:560px;margin-bottom:16px">
+    <div class="section-title">OCR 에이전트 테스트</div>
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">PDF 파일을 에이전트로 보내 OCR 추출이 되는지 확인합니다.</p>
+    <div class="form-group">
+      <label class="form-label">PDF 파일</label>
+      <input type="file" class="form-control" id="ocrTestFile" accept=".pdf" />
+    </div>
+    <button class="btn btn-primary" onclick="testOcr()">OCR 테스트</button>
+    <div id="ocrTestStatus" style="margin-top:8px;font-size:13px"></div>
+    <pre id="ocrTestResult" style="margin-top:8px;font-size:11px;background:var(--bg-muted,#f5f5f5);padding:8px;border-radius:4px;overflow:auto;max-height:200px;display:none"></pre>
+  </div>
+
+  <div class="card" style="max-width:560px;margin-bottom:16px">
+    <div class="section-title">Excel 생성 테스트</div>
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">JSON을 붙여넣으면 지출결의서 Excel을 생성합니다.</p>
+    <textarea class="form-control" id="excelJson" rows="10" style="font-family:monospace;font-size:12px" placeholder='{"document_id":"invoice-0001","created_date":"2026-07-06",...}'></textarea>
+    <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-primary" onclick="generateExcel()">Excel 생성 & 다운로드</button>
+      <button class="btn btn-outline" onclick="openReviewModal()">원본 + Excel 검토</button>
+    </div>
+    <div id="excelStatus" style="margin-top:8px;font-size:13px"></div>
+  </div>
+
+  <div class="card" style="max-width:560px">
+    <div class="section-title">Knowledge 문서 업로드</div>
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px">PDF 파일에 document_id를 붙여 Knowledge repo에 업로드합니다.</p>
+    <div class="form-group">
+      <label class="form-label">Document ID *</label>
+      <input type="text" class="form-control" id="uploadDocId" placeholder="예: invoice-0001" />
+    </div>
+    <div class="form-group">
+      <label class="form-label">Repo ID (비워두면 환경변수 사용)</label>
+      <input type="text" class="form-control" id="uploadRepoId" placeholder="PHARMA_KNOWLEDGE_REPO_ID" />
+    </div>
+    <div class="form-group">
+      <label class="form-label">PDF 파일 *</label>
+      <input type="file" class="form-control" id="uploadFile" accept=".pdf" />
+    </div>
+    <button class="btn btn-primary" id="uploadBtn" onclick="uploadDoc()">업로드</button>
+    <div id="uploadStatus" style="margin-top:12px;font-size:13px"></div>
+  </div>
+
+  <div class="card" style="max-width:760px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div class="section-title" style="margin:0">발송 이력</div>
+      <button class="btn btn-outline" style="padding:4px 10px;font-size:12px" onclick="loadHistory()">새로고침</button>
+    </div>
+    <div id="sendHistory" style="font-size:13px;color:var(--text-muted)">로딩 중...</div>
+  </div>
+</div>
+
+<!-- ── 로딩 오버레이 ────────────────────────────────── -->
+<div id="successOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:16px;padding:40px 56px;display:flex;flex-direction:column;align-items:center;gap:16px;box-shadow:0 8px 32px rgba(0,0,0,.2)">
+    <div style="width:64px;height:64px;border-radius:50%;background:#e8f5e9;display:flex;align-items:center;justify-content:center">
+      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#2e7d32" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+    </div>
+    <div id="successMsg" style="font-size:17px;font-weight:600;color:#1a1a1a"></div>
+  </div>
+</div>
+
+<div id="loadingOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;align-items:center;justify-content:center;flex-direction:column;gap:16px">
+  <div style="width:48px;height:48px;border:5px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite"></div>
+  <div id="loadingMsg" style="color:#fff;font-size:15px;font-weight:600">추출 중...</div>
+</div>
+<style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+
+<!-- ── 원본 + Excel 검토 모달 ─────────────────────────── -->
+<div class="modal-backdrop" id="reviewModal" style="align-items:center;justify-content:center">
+  <div class="modal" style="width:96vw;max-width:1400px;height:90vh;display:flex;flex-direction:column">
+    <div class="modal-header">
+      <span class="modal-title">원본 문서 + 지출결의서 검토</span>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn btn-primary btn-sm" onclick="reviewDownload()">Excel 다운로드</button>
+        <button class="btn btn-outline btn-sm" onclick="reviewSend()">메일 발송</button>
+        <button class="modal-close" onclick="closeModal('reviewModal')">×</button>
+      </div>
+    </div>
+    <div style="display:flex;gap:0;flex:1;overflow:hidden">
+      <!-- 왼쪽: PDF 원본 -->
+      <div style="flex:1;display:flex;flex-direction:column;border-right:1px solid var(--border)">
+        <div style="padding:8px 12px;font-size:12px;font-weight:600;background:var(--bg-muted,#f5f5f5);border-bottom:1px solid var(--border)">
+          📄 원본 문서 (읽기 전용)
+          <label style="margin-left:12px;font-weight:400;cursor:pointer">
+            <input type="file" id="reviewPdfInput" accept=".pdf" style="display:none" onchange="loadReviewPdf(this)">
+            <span style="color:var(--primary,#1a73e8)">파일 선택</span>
+          </label>
+        </div>
+        <iframe id="reviewPdfFrame" style="flex:1;border:none;width:100%" src="about:blank"></iframe>
+      </div>
+      <!-- 오른쪽: 편집 폼 -->
+      <div style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+        <div style="padding:8px 12px;font-size:12px;font-weight:600;background:var(--bg-muted,#f5f5f5);border-bottom:1px solid var(--border)">
+          ✏️ 지출결의서 편집
+        </div>
+        <div id="reviewForm" style="flex:1;overflow:auto;padding:16px"></div>
+      </div>
+    </div>
+    <!-- 발송 행 -->
+    <div style="padding:10px 16px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center">
+      <input type="email" class="form-control" id="reviewSendTo" placeholder="수신자 이메일" style="max-width:280px" />
+      <input type="text"  class="form-control" id="reviewSendSubject" placeholder="제목" style="flex:1" />
+      <span id="reviewStatus" style="font-size:13px;color:var(--text-muted)"></span>
     </div>
   </div>
 </div>

@@ -9,6 +9,7 @@ import json
 import logging
 import logging.handlers
 import socket
+import time
 import uuid
 from datetime import datetime
 from typing import Optional
@@ -23,7 +24,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from clients.agent_client import AgentApiError, invoke_agent, stream_agent_tokens
-from clients.knowledge_client import KnowledgeApiError, KnowledgeDuplicateError, delete_documents, hard_delete_datasource, ingest, get_document_status, law_to_markdown, prec_to_markdown
+from clients.knowledge_client import KnowledgeApiError, KnowledgeDuplicateError, delete_documents, hard_delete_datasource, ingest, get_document_status, get_document_chunks, list_document_names, law_to_markdown, prec_to_markdown
 from clients.law_client import LawApiError, format_jo, get_law, get_prec, search_law, search_prec
 from config import (
     AGENT_API_KEY, AGENT_ID, CHAT_HOST, CHAT_PORT, LOG_LEVEL,
@@ -38,7 +39,7 @@ from config import (
 from config import PHARMA_ENABLED
 if PHARMA_ENABLED:
     from pharma.db import init_db as pharma_init_db
-    from pharma.routes import router as pharma_router, sync_emails_job, check_overdue_job
+    from pharma.routes import router as pharma_router, sync_emails_job, check_overdue_job, pubsub_pull_job, watch_renewal_job
 
 _ROOT_DIR = Path(__file__).resolve().parent.parent
 LOG_DIR = _ROOT_DIR / "logs"
@@ -71,11 +72,13 @@ _prec_batch_cancel = False
 _DATA_DIR              = _ROOT_DIR / "data"
 BATCH_LAW_CONFIG_FILE  = _DATA_DIR / "batch_config.json"
 BATCH_PREC_CONFIG_FILE = _DATA_DIR / "batch_prec_config.json"
+BATCHTEST_CONFIG_FILE  = _DATA_DIR / "batchtest_config.json"
 LAW_STATES_FILE        = _DATA_DIR / "law_states.json"
 PREC_STATES_FILE       = _DATA_DIR / "prec_states.json"
 BATCH_LAW_LOGS_FILE    = _DATA_DIR / "batch_logs.json"
 BATCH_PREC_LOGS_FILE   = _DATA_DIR / "batch_prec_logs.json"
 NOTIFICATIONS_FILE     = _DATA_DIR / "notifications.json"
+BATCHTEST_DOCS_DIR     = _DATA_DIR / "batchtest_docs"
 
 
 def _load_json(path: Path, default=None):
@@ -99,6 +102,8 @@ def _load_batch_law_logs():    return _load_json(BATCH_LAW_LOGS_FILE, [])
 def _save_batch_law_logs(d):   _save_json(BATCH_LAW_LOGS_FILE, d)
 def _load_batch_prec_logs():   return _load_json(BATCH_PREC_LOGS_FILE, [])
 def _save_batch_prec_logs(d):  _save_json(BATCH_PREC_LOGS_FILE, d)
+def _load_batchtest_config():  return _load_json(BATCHTEST_CONFIG_FILE, {"enabled": False, "run_time": "02:00", "target": "prec", "repo": "prec", "count": 0, "concurrent": 1})
+def _save_batchtest_config(d): _save_json(BATCHTEST_CONFIG_FILE, d)
 def _load_notifications():     return _load_json(NOTIFICATIONS_FILE, {"notifications": []})
 def _save_notifications(d):    _save_json(NOTIFICATIONS_FILE, d)
 
@@ -190,8 +195,51 @@ async def _auto_run_prec_batch() -> None:
             logger.error("자동 판례 배치 수집 실패: %s", e)
 
 
+def _register_batchtest_job(run_time: str) -> None:
+    h, m    = _parse_run_time(run_time, 2)
+    trigger = CronTrigger(hour=h, minute=m, timezone="Asia/Seoul")
+    job_id  = "batchtest_auto"
+    if _scheduler.get_job(job_id):
+        _scheduler.reschedule_job(job_id, trigger=trigger)
+    else:
+        _scheduler.add_job(_auto_run_batchtest, trigger, id=job_id,
+                           misfire_grace_time=3600, coalesce=True)
+    logger.info("배치 테스트 스케줄: 매일 %02d:%02d", h, m)
+
+def _unregister_batchtest_job() -> None:
+    if _scheduler.get_job("batchtest_auto"):
+        _scheduler.remove_job("batchtest_auto")
+        logger.info("배치 테스트 스케줄 해제")
+
+async def _auto_run_batchtest() -> None:
+    global _batch_test_cancel
+    if _batch_test_cancel:
+        logger.info("자동 배치 테스트 스킵 — 취소 상태")
+        return
+    config = _load_batchtest_config()
+    if not config.get("enabled"):
+        return
+    req = BatchTestRequest(
+        count=int(config.get("count", 0)),
+        target=config.get("target", "prec"),
+        repo=config.get("repo", "prec"),
+        concurrent=int(config.get("concurrent", 1)),
+    )
+    logger.info("자동 배치 테스트 시작: target=%s, count=%d, repo=%s", req.target, req.count, req.repo)
+    _batch_test_cancel = False
+    try:
+        response = await batchtest_run(req)
+        async for _ in response.body_iterator:
+            pass
+        logger.info("자동 배치 테스트 완료")
+    except Exception as e:
+        logger.error("자동 배치 테스트 실패: %s", e)
+
+
 async def _run_law_batch() -> dict:
-    """법령 본문 일괄 수집 배치"""
+    """법령 본문 일괄 수집 배치 — 시행예정 법령 API로 변경분만 확인"""
+    from clients.law_client import search_eflaw
+
     config = _load_batch_law_config()
     states = _load_law_states()
     ndata  = _load_notifications()
@@ -217,11 +265,30 @@ async def _run_law_batch() -> dict:
         _save_batch_law_logs(logs[:50])
         return log_entry
 
+    # 최근 시행/변경된 법령 목록 조회 (오늘 기준)
+    today_str = started.strftime("%Y%m%d")
+    changed_law_names: set = set()
+    try:
+        ef_result = search_eflaw(date=today_str, display=200)
+        for ef in ef_result.get("laws", []):
+            changed_law_names.add(ef.get("법령명한글", ""))
+        logger.info("시행예정/변경 법령 %d건 감지", len(changed_law_names))
+    except Exception as e:
+        logger.warning("시행예정 법령 조회 실패, 전체 스캔: %s", e)
+        changed_law_names = None  # 실패 시 전체 스캔
+
     for law_entry in laws_to_check:
         law_name = law_entry["name"] if isinstance(law_entry, dict) else str(law_entry)
         state    = states.get(law_name, {})
         if not state.get("active", True):
             results.append({"name": law_name, "status": "비활성", "message": "폐지 비활성"})
+            continue
+
+        never_uploaded = not state.get("last_knowledge_upload")
+
+        # 변경 목록에 없고 이미 업로드된 법령은 스킵
+        if changed_law_names is not None and law_name not in changed_law_names and not never_uploaded:
+            results.append({"name": law_name, "status": "success", "message": "변동없음(스킵)"})
             continue
 
         msgs: list[str] = []
@@ -401,22 +468,30 @@ async def _run_prec_batch() -> dict:
         msgs: list[str] = []
 
         try:
-            PREC_DISPLAY = 100
-            prec_page    = 1
-            new_prec_cnt = 0
-            all_precs: list = []
+            # 1페이지만 조회해서 total_cnt 비교
+            first_page = search_prec(jo=law_name, display=100, page=1)
+            new_prec_cnt = int(first_page.get("total_cnt") or 0)
+            old_prec_cnt = state.get("last_prec_count")
 
-            while True:
+            # total_cnt 변동 없고 이미 업로드한 적 있으면 스킵
+            if old_prec_cnt is not None and new_prec_cnt == int(old_prec_cnt) and state.get("uploaded_prec_ids"):
+                state["last_prec_count"] = new_prec_cnt
+                states[law_name] = state
+                results.append({"name": law_name, "status": "success", "message": "변동없음"})
+                continue
+
+            # 변동 있으면 전체 목록 수집
+            PREC_DISPLAY = 100
+            all_precs: list = list(first_page.get("precs", []))
+            prec_page = 2
+
+            while len(all_precs) < new_prec_cnt:
                 pr = search_prec(jo=law_name, display=PREC_DISPLAY, page=prec_page)
-                if prec_page == 1:
-                    new_prec_cnt = int(pr.get("total_cnt") or 0)
                 batch_precs = pr.get("precs", [])
                 all_precs.extend(batch_precs)
-                if len(all_precs) >= new_prec_cnt or len(batch_precs) < PREC_DISPLAY:
+                if len(batch_precs) < PREC_DISPLAY:
                     break
                 prec_page += 1
-
-            old_prec_cnt = state.get("last_prec_count")
             if old_prec_cnt is not None and new_prec_cnt > int(old_prec_cnt):
                 diff = new_prec_cnt - int(old_prec_cnt)
                 _push_notification(ndata, "판례", law_name,
@@ -569,14 +644,23 @@ async def _run_prec_batch() -> dict:
 
 @asynccontextmanager
 async def lifespan(app_: FastAPI):
-    _register_law_batch_job(_load_batch_law_config().get("run_time", "02:00"))
-    _register_prec_batch_job(_load_batch_prec_config().get("run_time", "03:00"))
+    # _register_law_batch_job(_load_batch_law_config().get("run_time", "02:00"))
+    # _register_prec_batch_job(_load_batch_prec_config().get("run_time", "03:00"))
+    bt_cfg = _load_batchtest_config()
+    if bt_cfg.get("enabled"):
+        _register_batchtest_job(bt_cfg.get("run_time", "02:00"))
     if PHARMA_ENABLED:
         pharma_init_db()
         _scheduler.add_job(sync_emails_job,   "interval", minutes=PHARMA_CHECK_INTERVAL_MIN,
                            id="pharma_email_sync",    coalesce=True, misfire_grace_time=300)
         _scheduler.add_job(check_overdue_job, "interval", hours=1,
                            id="pharma_overdue_check", coalesce=True, misfire_grace_time=300)
+        from config import PUBSUB_PROJECT_ID
+        if PUBSUB_PROJECT_ID:
+            _scheduler.add_job(pubsub_pull_job,    "interval", seconds=30,
+                               id="pharma_pubsub_pull",   coalesce=True, misfire_grace_time=60)
+            _scheduler.add_job(watch_renewal_job,  "interval", hours=6,
+                               id="pharma_watch_renewal", coalesce=True, misfire_grace_time=3600)
     _scheduler.start()
     logger.info("APScheduler 시작 — 등록 job: %d개", len(_scheduler.get_jobs()))
     yield
@@ -1220,6 +1304,509 @@ async def test_chat_stream(req: ChatRequest):
     if not LAW_PREC_TEST_AGENT_ID or not LAW_PREC_TEST_AGENT_API_KEY:
         raise HTTPException(status_code=503, detail="LAW_PREC_TEST_AGENT_ID / LAW_PREC_TEST_AGENT_API_KEY가 설정되지 않았습니다.")
     return _stream_response(req.message.strip(), LAW_PREC_TEST_AGENT_ID, LAW_PREC_TEST_AGENT_API_KEY)
+
+
+# ── 배치 적재 테스트 ──────────────────────────────────────────────
+
+BATCH_TEST_RESULTS_FILE = _DATA_DIR / "batch_test_results.json"
+_batch_test_cancel = False
+
+def _load_batch_test_results():
+    return _load_json(BATCH_TEST_RESULTS_FILE, [])
+
+def _save_batch_test_results(d):
+    _save_json(BATCH_TEST_RESULTS_FILE, d)
+
+
+class BatchTestRequest(BaseModel):
+    count: int = Field(..., ge=0, le=5000)  # 0 = 전체 (제한 없음)
+    target: str = Field(default="law")  # "law" or "prec"
+    repo: str = Field(default="law")    # "law", "prec", "summ"
+    concurrent: int = Field(default=1, ge=1, le=20)
+    keyword: str = Field(default="근로기준법")  # 판례 검색 시 참조 법령명
+
+
+@app.get("/api/batchtest/schedule")
+async def batchtest_schedule_get():
+    return _load_batchtest_config()
+
+@app.post("/api/batchtest/schedule")
+async def batchtest_schedule_set(body: dict):
+    config = _load_batchtest_config()
+    config.update({k: body[k] for k in ("enabled", "run_time", "target", "repo", "count", "concurrent") if k in body})
+    _save_batchtest_config(config)
+    if config.get("enabled"):
+        _register_batchtest_job(config["run_time"])
+    else:
+        _unregister_batchtest_job()
+    return config
+
+
+@app.get("/api/batchtest/results")
+async def batchtest_results_get():
+    return {"results": _load_batch_test_results()}
+
+
+@app.delete("/api/batchtest/results", status_code=204)
+async def batchtest_results_clear():
+    _save_batch_test_results([])
+
+
+@app.post("/api/batchtest/cancel")
+async def batchtest_cancel():
+    global _batch_test_cancel
+    _batch_test_cancel = True
+    return {"status": "cancel_requested"}
+
+
+@app.post("/api/batchtest/run")
+async def batchtest_run(req: BatchTestRequest):
+    global _batch_test_cancel
+    _batch_test_cancel = False
+
+    repo_map = {"law": KNOWLEDGE_LAW_REPO_ID, "prec": KNOWLEDGE_PREC_REPO_ID, "summ": KNOWLEDGE_SUMM_REPO_ID}
+    repo_id = repo_map.get(req.repo, "")
+    if not repo_id:
+        raise HTTPException(status_code=400, detail=f"KNOWLEDGE_{req.repo.upper()}_REPO_ID 미설정")
+
+    logger.info("배치 적재 테스트: target=%s, count=%d, repo=%s, concurrent=%d",
+                req.target, req.count, req.repo, req.concurrent)
+
+    async def gen():
+        def emit(data):
+            return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+        run_started = datetime.now()
+        results_detail = []
+        error_reasons: list[dict] = []
+        uploaded = 0
+        errors = 0
+        skipped = 0
+        upload_phase_start = None
+        upload_phase_end = None
+        embed_phase_start = None
+        embed_phase_end = None
+        concurrent_samples: list[int] = []
+        cycle_completions: list[dict] = []
+        # doc_id → {"name": str, "upload_time": datetime}
+        pending_docs: dict[str, dict] = {}
+
+        def _extract_doc_id(res: dict) -> str:
+            # 상태 조회 API는 document_id를 사용 (datasource_file_id 아님)
+            doc_id = (res.get("document_id")
+                      or res.get("id")
+                      or res.get("data", {}).get("document_id", "")
+                      or res.get("data", {}).get("id", ""))
+            ds_id = res.get("datasource_file_id", "")
+            logger.info("ingest 응답: document_id=%s, datasource_file_id=%s", doc_id, ds_id)
+            return doc_id
+
+        try:
+            import random
+
+            # ── 헬퍼: 페이지 단위로 아이템을 가져오는 이터레이터 ──
+            async def _fetch_items():
+                if req.target == "law":
+                    probe = await asyncio.to_thread(search_law, org="1492000", display=1)
+                    total_cnt = int(probe.get("total_cnt") or 0)
+                    page_size = min(req.count * 2, 100)
+                    max_pg = max(1, (total_cnt - 1) // page_size + 1)
+                    pg = random.randint(1, max_pg)
+                    seen = set()
+                    loops = 0
+                    while loops < max_pg:
+                        actual_pg = ((pg - 1) % max_pg) + 1
+                        result = await asyncio.to_thread(search_law, org="1492000", display=page_size, page=actual_pg)
+                        for law in result.get("laws", []):
+                            lid = law.get("법령명한글", "")
+                            if lid and lid not in seen:
+                                seen.add(lid)
+                                yield law
+                        pg += 1
+                        loops += 1
+                else:
+                    prec_laws = [l["name"] for l in _load_batch_prec_config().get("laws", [])] or ["근로기준법"]
+                    seen = set()
+                    for law_name in prec_laws:
+                        if _batch_test_cancel:
+                            break
+                        try:
+                            probe = await asyncio.to_thread(search_prec, jo=law_name, display=1, page=1)
+                        except Exception:
+                            continue
+                        total_cnt = int(probe.get("total_cnt") or 0)
+                        if total_cnt == 0:
+                            continue
+                        max_pg = max(1, (total_cnt - 1) // 100 + 1)
+                        pg = random.randint(1, max_pg)
+                        loops = 0
+                        while loops < max_pg:
+                            actual_pg = ((pg - 1) % max_pg) + 1
+                            try:
+                                batch_res = await asyncio.to_thread(search_prec, jo=law_name, display=100, page=actual_pg)
+                            except Exception:
+                                break
+                            for p in batch_res.get("precs", []):
+                                pid = str(p.get("판례정보일련번호") or p.get("판례일련번호") or "")
+                                if pid and pid not in seen:
+                                    seen.add(pid)
+                                    yield p
+                            pg += 1
+                            loops += 1
+
+            # ── 업로드 헬퍼: 단건 업로드 후 결과 dict 반환 ──
+            def _safe_fname(name: str, max_len: int = 80) -> str:
+                import re
+                return re.sub(r'[\\/:*?"<>|]', '_', name)[:max_len]
+
+            async def upload_one(item) -> dict:
+                if req.target == "law":
+                    iname = item.get("법령명한글", "")
+                    iid   = str(item.get("법령ID", ""))
+                    fname_pre = f"{_safe_fname(iname)}.json"
+                else:
+                    iid   = str(item.get("판례정보일련번호") or item.get("판례일련번호") or "")
+                    iname = item.get("사건명", iid)
+                    fname_pre = f"{iid}_{_safe_fname(iname)}.json"
+                t0 = time.perf_counter()
+                # Knowledge에 이미 있으면 API 호출 없이 즉시 스킵
+                if fname_pre in existing_names:
+                    return {"status": "duplicate", "name": iname, "elapsed": round(time.perf_counter() - t0, 2)}
+                try:
+                    docs_dir = BATCHTEST_DOCS_DIR / req.target
+                    docs_dir.mkdir(parents=True, exist_ok=True)
+                    if req.target == "law":
+                        detail  = await asyncio.to_thread(get_law, law_id=iid)
+                        acnt    = len(detail.get("articles", []))
+                        fname   = f"{_safe_fname(iname)}.json"
+                        payload = {k: v for k, v in detail.items() if k != "raw"}
+                    else:
+                        detail  = await asyncio.to_thread(get_prec, prec_id=iid)
+                        acnt    = 0
+                        fname   = f"{iid}_{_safe_fname(iname)}.json"
+                        payload = {k: v for k, v in detail.items() if k != "raw"}
+                    content = json.dumps(payload, ensure_ascii=False, indent=2)
+                    skb     = round(len(content.encode("utf-8")) / 1024, 1)
+                    (docs_dir / fname).write_text(content, encoding="utf-8")
+                    meta    = {"category": "배치테스트", "tags": [iname]}
+                    if req.target == "prec":
+                        meta["prec_id"] = iid
+                    res = await asyncio.to_thread(ingest, repo_id, content, fname, meta)
+                    return {"status": "ok", "name": iname, "size_kb": skb,
+                            "elapsed": round(time.perf_counter() - t0, 2),
+                            "doc_id": _extract_doc_id(res), "article_cnt": acnt}
+                except KnowledgeDuplicateError:
+                    return {"status": "duplicate", "name": iname, "elapsed": round(time.perf_counter() - t0, 2)}
+                except Exception as e:
+                    msg = str(e)
+                    return {"status": "not_found" if ("404" in msg or "Not Found" in msg) else "error",
+                            "name": iname, "elapsed": round(time.perf_counter() - t0, 2),
+                            "error": f"{type(e).__name__}: {msg[:150]}",
+                            "status_code": getattr(e, "status_code", None)}
+
+            def _apply_result(r: dict) -> str:
+                nonlocal uploaded, skipped, errors
+                name, status, elapsed = r["name"], r["status"], r["elapsed"]
+                if status == "ok":
+                    uploaded += 1
+                    doc_id = r["doc_id"]
+                    acnt   = r.get("article_cnt", 0)
+                    skb    = r["size_kb"]
+                    entry  = {"name": name, "status": "uploaded", "size_kb": skb,
+                              "elapsed_sec": elapsed, "doc_id": doc_id, "embed_status": "pending"}
+                    if acnt:
+                        entry["articles"] = acnt
+                    results_detail.append(entry)
+                    if doc_id:
+                        pending_docs[doc_id] = {"name": name, "upload_time": datetime.now(), "idx": len(results_detail) - 1}
+                    else:
+                        entry["embed_status"] = "no_doc_id"
+                    extra = f", {acnt}조" if acnt else ""
+                    return emit({"step": "upload", "status": "done",
+                                 "message": f"[{uploaded}/{target_count}] {name} — {skb}KB, {elapsed}초{extra}",
+                                 "progress": uploaded, "total": target_count})
+                elif status == "duplicate":
+                    skipped += 1
+                    results_detail.append({"name": name, "status": "duplicate", "elapsed_sec": elapsed, "embed_status": "skip"})
+                    return emit({"step": "upload", "status": "done",
+                                 "message": f"[{uploaded}/{target_count}] {name} — 중복, 다음으로 대체",
+                                 "progress": uploaded, "total": target_count})
+                elif status == "not_found":
+                    skipped += 1
+                    results_detail.append({"name": name, "status": "not_found", "elapsed_sec": elapsed, "embed_status": "skip"})
+                    return emit({"step": "upload", "status": "done",
+                                 "message": f"[{uploaded}/{target_count}] {name} — 조회 불가(404), 다음으로 대체",
+                                 "progress": uploaded, "total": target_count})
+                else:
+                    errors += 1
+                    short_err = r.get("error", "알 수 없는 오류")
+                    results_detail.append({"name": name, "status": "error", "error": short_err,
+                                           "elapsed_sec": elapsed, "embed_status": "skip"})
+                    error_reasons.append({"phase": "upload", "name": name, "error": short_err,
+                                          "status_code": r.get("status_code")})
+                    return emit({"step": "upload", "status": "error",
+                                 "message": f"[{uploaded}/{target_count}] {name} — {short_err}",
+                                 "progress": uploaded, "total": target_count})
+
+            # ── 업로드: 성공 건수가 count에 도달할 때까지 (0 = 전체) ──
+            target_count  = req.count if req.count > 0 else 10_000_000
+            concurrent_n  = max(1, req.concurrent)
+
+            # 기존 Knowledge 문서 파일명 사전 로드 (upload 전 중복 체크로 불필요한 API 호출 방지)
+            existing_names: set[str] = set()
+            try:
+                yield emit({"step": "phase", "status": "info",
+                            "message": "── Knowledge 기존 문서 목록 조회 중... ──"})
+                existing_names = await asyncio.to_thread(list_document_names, repo_id)
+                yield emit({"step": "phase", "status": "info",
+                            "message": f"── 기존 문서 {len(existing_names):,}건 확인 ──"})
+            except Exception as _e:
+                logger.warning("기존 문서 목록 조회 실패 (중복 체크 없이 진행): %s", _e)
+
+            upload_phase_start = datetime.now()
+            if req.target == "prec":
+                prec_law_cnt = len(_load_batch_prec_config().get("laws", []))
+                yield emit({"step": "phase", "status": "info",
+                            "message": f"── 판례 수집 법령: 배치 설정 {prec_law_cnt}개 기준 (전체 중복 제거) ──"})
+            yield emit({"step": "phase", "status": "start",
+                        "message": f"── 업로드 시작: {upload_phase_start.strftime('%H:%M:%S')} "
+                                   f"(목표 {target_count}건, 동시 {concurrent_n}건) ──"})
+
+            async def _run_batch(batch: list):
+                """배치를 gather로 실행하고 결과 이벤트를 yield"""
+                if concurrent_n > 1:
+                    yield emit({"step": "upload", "status": "start",
+                                "message": f"[{uploaded+1}~{min(uploaded+len(batch), target_count)}/{target_count}] "
+                                           f"{len(batch)}건 병렬 업로드 중...",
+                                "progress": uploaded, "total": target_count})
+                else:
+                    first_name = batch[0].get("법령명한글") or batch[0].get("사건명", "")
+                    yield emit({"step": "upload", "status": "start",
+                                "message": f"[{uploaded+1}/{target_count}] {first_name} 업로드 중...",
+                                "progress": uploaded, "total": target_count})
+                results = await asyncio.gather(*[upload_one(i) for i in batch])
+                for r in results:
+                    if uploaded >= target_count:
+                        break
+                    yield _apply_result(r)
+
+            batch: list = []
+            async for item in _fetch_items():
+                if _batch_test_cancel:
+                    yield emit({"step": "cancel", "status": "error", "message": "사용자 중지"})
+                    break
+                if uploaded >= target_count:
+                    break
+                batch.append(item)
+                if len(batch) < concurrent_n:
+                    continue
+                async for ev in _run_batch(batch):
+                    yield ev
+                batch = []
+
+            if batch and not _batch_test_cancel and uploaded < target_count:
+                async for ev in _run_batch(batch):
+                    yield ev
+
+            upload_phase_end = datetime.now()
+            upload_sec = int((upload_phase_end - upload_phase_start).total_seconds()) if upload_phase_start else 0
+            yield emit({"step": "phase", "status": "done",
+                        "message": f"── 업로드 완료: {upload_phase_end.strftime('%H:%M:%S')} "
+                                   f"(소요 {upload_sec}초, 성공 {uploaded}건, 중복 {skipped}건, 실패 {errors}건) ──"})
+
+            # ── 3단계: 임베딩 상태 확인 ──
+            if pending_docs:
+                POLL_INTERVAL = 5
+                embed_ok = 0
+                embed_fail = 0
+                embed_timeout = 0
+
+                embed_phase_start = datetime.now()
+                total_to_embed = len(pending_docs)
+                yield emit({"step": "phase", "status": "start",
+                            "message": f"── 임베딩 확인 시작: {embed_phase_start.strftime('%H:%M:%S')} (대기 {total_to_embed}건) ──"})
+
+                poll_start = time.perf_counter()
+                concurrent_samples: list[int] = []
+                cycle_completions: list[dict] = []
+                poll_cycle = 0
+
+                while pending_docs:
+                    if _batch_test_cancel:
+                        yield emit({"step": "cancel", "status": "error", "message": "사용자 중지"})
+                        break
+
+                    poll_cycle += 1
+                    done_ids = []
+                    indexing_count = 0
+
+                    for doc_id, info in pending_docs.items():
+                        try:
+                            doc = await asyncio.to_thread(get_document_status, repo_id, doc_id)
+                            status = doc.get("status", "unknown")
+                            is_indexing = doc.get("is_indexing", True)
+                            elapsed_embed = round(time.perf_counter() - poll_start, 1)
+                            if poll_cycle == 1:
+                                logger.info("문서 상태 응답 (%s): %s", doc_id[:12], {k: v for k, v in doc.items() if k != "raw"})
+
+                            chunk_count = doc.get("chunk_count") or 0
+                            chunk_progress = doc.get("embedding_chunk_progress", "")
+
+                            if status == "embedded" and not is_indexing:
+                                done_ids.append(doc_id)
+                                embed_ok += 1
+                                # chunks API로 실제 청크 수 조회
+                                try:
+                                    ch = await asyncio.to_thread(get_document_chunks, repo_id, doc_id)
+                                    chunk_count = ch.get("count", 0) or chunk_count
+                                except Exception:
+                                    pass
+                                results_detail[info["idx"]]["embed_status"] = "embedded"
+                                results_detail[info["idx"]]["embed_sec"] = elapsed_embed
+                                results_detail[info["idx"]]["chunk_count"] = chunk_count
+                                yield emit({"step": "embed", "status": "done",
+                                            "message": f"  ✓ {info['name']} — embedded ({elapsed_embed}초, {chunk_count}청크)"})
+                            elif status == "failed":
+                                done_ids.append(doc_id)
+                                embed_fail += 1
+                                fail_reason = doc.get("error", "") or doc.get("message", "") or "사유 미제공"
+                                results_detail[info["idx"]]["embed_status"] = "failed"
+                                results_detail[info["idx"]]["embed_sec"] = elapsed_embed
+                                results_detail[info["idx"]]["embed_error"] = str(fail_reason)[:200]
+                                error_reasons.append({"phase": "embed", "name": info["name"], "error": str(fail_reason)[:200]})
+                                yield emit({"step": "embed", "status": "error",
+                                            "message": f"  ✗ {info['name']} — 임베딩 실패 ({elapsed_embed}초): {str(fail_reason)[:100]}"})
+                            else:
+                                results_detail[info["idx"]]["embed_status"] = status
+                                results_detail[info["idx"]]["chunk_count"] = chunk_count
+                                results_detail[info["idx"]]["chunk_progress"] = chunk_progress
+                                if is_indexing or status in ("indexing", "processing", "parsing", "chunked"):
+                                    indexing_count += 1
+                                info["check_count"] = info.get("check_count", 0) + 1
+                        except Exception as exc:
+                            info["fail_count"] = info.get("fail_count", 0) + 1
+                            if info["fail_count"] == 1:
+                                logger.warning("문서 상태 조회 실패 (%s): %s", doc_id[:12], exc)
+                            if info["fail_count"] >= 5:
+                                done_ids.append(doc_id)
+                                results_detail[info["idx"]]["embed_status"] = "check_failed"
+                                yield emit({"step": "embed", "status": "error",
+                                            "message": f"  ⚠ {info['name']} — 상태 조회 불가 (doc_id: {doc_id[:20]}...)"})
+
+                    for did in done_ids:
+                        del pending_docs[did]
+
+                    # 동시 처리 수 기록
+                    active_count = indexing_count or len(pending_docs)
+                    concurrent_samples.append(active_count)
+                    elapsed_total = round(time.perf_counter() - poll_start, 1)
+                    cycle_completions.append({
+                        "cycle": poll_cycle, "elapsed": elapsed_total,
+                        "completed": len(done_ids), "concurrent": active_count,
+                    })
+
+                    if pending_docs:
+                        completed_so_far = embed_ok + embed_fail
+                        yield emit({"step": "embed", "status": "start",
+                                    "message": f"  대기 {len(pending_docs)}건 · 동시처리 {active_count}건 · "
+                                               f"완료 {completed_so_far}/{total_to_embed} · {elapsed_total}초 경과"})
+                        await asyncio.sleep(POLL_INTERVAL)
+
+                # 남아있는 경우 (check_failed 5회로 빠진 것들)
+                for doc_id, info in pending_docs.items():
+                    embed_timeout += 1
+                    results_detail[info["idx"]]["embed_status"] = "unknown"
+                    yield emit({"step": "embed", "status": "error",
+                                "message": f"  ⚠ {info['name']} — 상태 미확인"})
+
+                # 동시 처리 통계
+                embed_phase_end = datetime.now()
+                embed_sec = int((embed_phase_end - embed_phase_start).total_seconds()) if embed_phase_start else 0
+                if concurrent_samples:
+                    avg_concurrent = round(sum(concurrent_samples) / len(concurrent_samples), 1)
+                    max_concurrent = max(concurrent_samples)
+                    min_concurrent = min(concurrent_samples)
+                else:
+                    avg_concurrent = max_concurrent = min_concurrent = 0
+                embed_throughput = round(embed_ok / max(embed_sec, 1), 2) if embed_ok else 0
+
+                total_chunks = sum(d.get("chunk_count", 0) for d in results_detail)
+                embed_stats_msg = (f"총 {total_chunks}청크 · 동시처리 평균 {avg_concurrent}건 "
+                                   f"(최소 {min_concurrent} / 최대 {max_concurrent}), "
+                                   f"처리속도 {embed_throughput}건/초")
+                yield emit({"step": "embed_stats", "status": "done",
+                            "message": f"  📊 {embed_stats_msg}"})
+                yield emit({"step": "phase", "status": "done",
+                            "message": f"── 임베딩 완료: {embed_phase_end.strftime('%H:%M:%S')} "
+                                       f"(소요 {embed_sec}초, 성공 {embed_ok}, 실패 {embed_fail}) ──"})
+
+            # ── 결과 저장 ──
+            run_finished = datetime.now()
+            total_elapsed = int((run_finished - run_started).total_seconds())
+            avg_sec = round(total_elapsed / max(uploaded, 1), 2) if uploaded else 0
+
+            embed_summary = {"embedded": 0, "failed": 0, "timeout": 0, "pending": 0}
+            for d in results_detail:
+                es = d.get("embed_status", "skip")
+                if es in embed_summary:
+                    embed_summary[es] += 1
+
+            # 동시처리 통계 (임베딩 단계가 없으면 기본값)
+            total_chunks = sum(d.get("chunk_count", 0) for d in results_detail)
+            if not concurrent_samples:
+                avg_concurrent = max_concurrent = min_concurrent = 0
+                embed_throughput = 0
+                cycle_completions = []
+
+            upload_sec = int((upload_phase_end - upload_phase_start).total_seconds()) if upload_phase_start and upload_phase_end else 0
+            embed_sec = int((embed_phase_end - embed_phase_start).total_seconds()) if embed_phase_start and embed_phase_end else 0
+
+            summary = {
+                "id": str(uuid.uuid4())[:8],
+                "run_at": run_started.strftime("%Y-%m-%d %H:%M:%S"),
+                "finished_at": run_finished.strftime("%Y-%m-%d %H:%M:%S"),
+                "target": req.target,
+                "repo": req.repo,
+                "concurrent": concurrent_n,
+                "requested": req.count,
+                "uploaded": uploaded,
+                "skipped": skipped,
+                "errors": errors,
+                "embed": embed_summary,
+                "total_chunks": total_chunks,
+                "embed_concurrency": {
+                    "avg": avg_concurrent,
+                    "min": min_concurrent,
+                    "max": max_concurrent,
+                    "throughput": embed_throughput,
+                    "samples": concurrent_samples,
+                    "cycles": cycle_completions,
+                },
+                "total_sec": total_elapsed,
+                "upload_sec": upload_sec,
+                "embed_sec": embed_sec,
+                "avg_sec": avg_sec,
+                "error_reasons": error_reasons,
+                "details": results_detail,
+            }
+            existing = _load_batch_test_results()
+            existing.insert(0, summary)
+            _save_batch_test_results(existing[:30])
+
+            yield emit({"step": "done", "status": "done",
+                        "message": f"완료 — 업로드 {uploaded}건({upload_sec}초), 임베딩 {embed_summary['embedded']}건({embed_sec}초), "
+                                   f"중복 {skipped}건, 실패 {errors}건, "
+                                   f"총 {total_elapsed}초 ({run_started.strftime('%H:%M:%S')}~{run_finished.strftime('%H:%M:%S')})",
+                        "summary": summary})
+
+        except Exception as e:
+            yield emit({"step": "error", "status": "error",
+                        "message": f"테스트 실패: {type(e).__name__}: {str(e)[:200]}"})
+        finally:
+            yield "data: [DONE]\n\n"
+
+    return StreamingResponse(gen(), media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"})
 
 
 # ── 서버 시작 ───────────────────────────────────────────────────

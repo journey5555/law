@@ -13,6 +13,8 @@ LAW_SERVICE_URL = "http://www.law.go.kr/DRF/lawService.do"
 AGENT_ID = os.getenv("AGENT_ID", "")
 SUMMARIZE_AGENT_ID      = os.getenv("SUMMARIZE_AGENT_ID",        "")
 SUMMARIZE_API_KEY       = os.getenv("SUMMARIZE_API_KEY",          "")
+PHARMA_KNOWLEDGE_AGENT_ID  = os.getenv("PHARMA_KNOWLEDGE_AGENT_ID",  "")
+PHARMA_KNOWLEDGE_API_KEY   = os.getenv("PHARMA_KNOWLEDGE_API_KEY",   "")
 LAW_PREC_AGENT_ID       = os.getenv("LAW_PREC_AGENT_ID",          "")
 LAW_PREC_AGENT_API_KEY  = os.getenv("LAW_PREC_AGENT_API_KEY",     "")
 LAW_PREC_TEST_AGENT_ID  = os.getenv("LAW_PREC_TEST_AGENT_ID",     "")
@@ -35,12 +37,22 @@ AGENT_VERIFY_SSL = os.getenv("AGENT_VERIFY_SSL", "true").lower() in ("1", "true"
 # 채팅 웹 서버
 CHAT_HOST = os.getenv("CHAT_HOST", "127.0.0.1")
 CHAT_PORT = int(os.getenv("CHAT_PORT", "8080"))
+PHARMA_EXTERNAL_URL = os.getenv("PHARMA_EXTERNAL_URL", f"http://112.172.131.92:{CHAT_PORT}")
+PHARMA_OCR_TOKEN    = os.getenv("PHARMA_OCR_TOKEN", "")
 
 # 로그 (DEBUG, INFO, WARNING)
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 
 # Pharma Monitor — Gmail OAuth2
 PHARMA_ENABLED            = os.getenv("PHARMA_ENABLED", "true").lower() in ("1", "true", "yes")
-PHARMA_GMAIL_SCOPES       = ["https://www.googleapis.com/auth/gmail.readonly"]
-PHARMA_GMAIL_REDIRECT_URI = os.getenv("PHARMA_GMAIL_REDIRECT_URI", "http://localhost:8080/pharma/oauth/callback")
+PHARMA_GMAIL_SCOPES       = [
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/pubsub",
+]
+PUBSUB_PROJECT_ID         = os.getenv("PUBSUB_PROJECT_ID", "")
+PUBSUB_TOPIC_NAME         = os.getenv("PUBSUB_TOPIC_NAME", "gmail-pharma")
+PUBSUB_SUBSCRIPTION_NAME  = os.getenv("PUBSUB_SUBSCRIPTION_NAME", "gmail-pharma-sub")
+PHARMA_GMAIL_REDIRECT_URI    = os.getenv("PHARMA_GMAIL_REDIRECT_URI", "http://localhost:8080/pharma/oauth/callback")
+PHARMA_KNOWLEDGE_REPO_ID    = os.getenv("PHARMA_KNOWLEDGE_REPO_ID", "")
 PHARMA_CHECK_INTERVAL_MIN = int(os.getenv("PHARMA_CHECK_INTERVAL_MINUTES", "30"))

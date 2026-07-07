@@ -17,7 +17,7 @@ _HEADERS = {
 
 def _session() -> requests.Session:
     s = requests.Session()
-    retry = Retry(total=3, backoff_factor=1.0, status_forcelist=[500, 502, 503, 504])
+    retry = Retry(total=3, backoff_factor=1.0, status_forcelist=[404, 500, 502, 503, 504])
     s.mount("https://", HTTPAdapter(max_retries=retry))
     s.mount("http://", HTTPAdapter(max_retries=retry))
     s.headers.update(_HEADERS)
